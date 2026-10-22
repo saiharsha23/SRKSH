@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-ivory font-sans text-bark antialiased; }
+  h1, h2, h3, h4 { @apply font-serif text-bark; }
+  :focus-visible { @apply outline outline-2 outline-offset-2 outline-saffron-deep; }
+}
+@layer components {
+  .container-x { @apply mx-auto w-full max-w-6xl px-5 sm:px-8; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-medium transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-bark text-ivory hover:bg-terracotta-deep; }
+  .btn-accent { @apply btn bg-saffron text-bark hover:bg-saffron-deep hover:text-ivory; }
+  .btn-outline { @apply btn border border-bark/30 text-bark hover:bg-bark hover:text-ivory; }
+  .btn-danger { @apply btn bg-red-700 text-white hover:bg-red-800; }
+  .btn-sm { @apply px-4 py-2 text-xs; }
+  .card { @apply rounded-3xl bg-white/70 p-6 shadow-soft ring-1 ring-sand; }
+  .input { @apply w-full rounded-xl border border-sand bg-white px-4 py-2.5 text-sm text-bark placeholder:text-bark-faint focus:border-saffron-deep focus:outline-none focus:ring-2 focus:ring-saffron/40; }
+  .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-bark-soft; }
+  .eyebrow { @apply mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-terracotta; }
+  .h2 { @apply text-3xl font-semibold leading-tight sm:text-4xl md:text-5xl; }
+}
