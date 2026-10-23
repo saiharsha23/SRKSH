@@ -62,21 +62,43 @@ Go to `/admin` (link in the footer) and sign in.
 
 **HPL management** (left sidebar, collapsible on mobile)
 1. **Settings → Create the first edition** (e.g. "HPL 2026"). Set status and an optional tie-break rule. "Start new edition" begins a fresh season; old editions and all their results are kept and can be made current again.
-2. **Teams → Add team**: name, colour, logo, captain + photo, and any number of members (Add member). Duplicate names within a team are rejected.
+2. **Teams → Add team**: name, colour, logo, captain + photo, leader passcode/PIN, and members.
+   - Set or generate a **Leader Passcode / PIN** (e.g. 6 digits).
+   - Use the **Copy captain login** button on the team card to easily copy and send the captain their login credentials.
 3. **Sports → Add sport**: any name/category/image/status. Open a sport to:
-   - add participating teams (dropdown of saved teams) and tick players from each roster; manual players are allowed with a warning if not on the roster; a player can be in any number of sports;
+   - add participating teams and players (team captains can also register and pick their squad via their Leader Portal);
    - record **Results and Points**: winner, runner-up and extra placements, each with free-form points; status *Pending* (no points counted) or *Completed*.
 4. **Leaderboard** is read-only: it is a database view summing points from *completed* results, with competition ranking (1, 1, 3) and all teams shown including zero points.
 
 **Website content**: *About Photos* (four fixed slots with title/caption; slot 1 also feeds the homepage hero) and *Gallery* (multi-upload with title, caption, category, progress, edit/replace/delete).
 
-## 6. Data integrity rules (enforced in the database)
+## 6. Team Leader Portal (`/leader`)
+
+Team captains can manage their own team's sports and squads without needing an admin account:
+
+1. **Captain Sign In (`/leader/login`)**:
+   - The captain selects their team from the dropdown and enters their assigned Team Passcode / PIN.
+2. **Sport Registration**:
+   - Captains can browse upcoming and in-progress sports for the current HPL edition.
+   - Click **Register Team** to enter their team into a sport, or unregister if plans change.
+3. **Squad Selection**:
+   - Click **Select Squad** on any registered sport.
+   - Check or uncheck players directly from the team's official roster saved by the admin.
+   - The selected squad is saved atomically via PostgreSQL security-definer RPC functions (`team_leader_save_squad`).
+4. **Roster & Standings View**:
+   - Captains can view their full team roster and inspect which sports each player is participating in, as well as live standings and placements.
+
+*Note for existing Supabase projects*: Run `supabase/team_leader_migration.sql` once in the Supabase SQL Editor to add the `team_credentials` table and RPC functions.
+
+## 7. Data integrity rules (enforced in the database)
 
 - One result per sport; placements are replaced atomically, so editing/correcting a result can never double count.
 - A team can hold only one placement per sport, and only participating teams can be placed.
 - Pending results contribute nothing and show no winners publicly.
 - Teams that appear in saved results cannot be deleted. Removing a roster member keeps the player's name on past sport lists.
+- Team leaders can only register and select squad members for their own team using their verified passcode; they cannot alter match results or other teams' rosters.
 - Storage and table writes require an admin; public visitors have read-only access.
+
 
 ## 7. Project layout
 

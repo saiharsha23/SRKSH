@@ -53,7 +53,7 @@ export async function getSportBundle(editionId: string): Promise<SportBundle> {
   if (!ids.length) return { sports, sportTeams: [], participants: [], results: [], placements: [] }
   const [st, pa, re] = await Promise.all([
     supabase.from('sport_teams').select('*').in('sport_id', ids),
-    supabase.from('sport_participants').select('*').in('sport_id', ids).order('player_name'),
+    supabase.from('sport_participants').select('*').in('sport_id', ids).order('created_at', { ascending: true }),
     supabase.from('sport_results').select('*').in('sport_id', ids),
   ])
   const results = must(re) as SportResult[]

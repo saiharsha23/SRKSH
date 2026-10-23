@@ -19,7 +19,20 @@ function PageHead({ eyebrow, title, children }: { eyebrow: string; title: string
 
 function HplNav() {
   const l = [['/hpl/teams', 'Teams'], ['/hpl/sports', 'Sports'], ['/hpl/results', 'Results'], ['/hpl/leaderboard', 'Leaderboard']]
-  return <div className="mt-6 flex flex-wrap gap-2">{l.map(([to, t]) => <Link key={to} to={to} className="rounded-full bg-white/70 px-4 py-2 text-sm font-medium text-bark-soft ring-1 ring-sand hover:bg-bark hover:text-ivory">{t}</Link>)}</div>
+  return (
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap gap-2">
+        {l.map(([to, t]) => (
+          <Link key={to} to={to} className="rounded-full bg-white/70 px-4 py-2 text-sm font-medium text-bark-soft ring-1 ring-sand hover:bg-bark hover:text-ivory">
+            {t}
+          </Link>
+        ))}
+      </div>
+      <Link to="/leader/login" className="rounded-full bg-saffron-soft px-4 py-2 text-sm font-semibold text-bark hover:bg-saffron transition">
+        Captain / Leader Portal →
+      </Link>
+    </div>
+  )
 }
 
 function Body({ children }: { children: (d: ReturnType<typeof useHpl>['data']) => ReactNode }) {
@@ -52,8 +65,10 @@ export function HplLanding() {
               <Link to="/hpl/sports" className="btn-outline">Explore Sports</Link>
               <Link to="/hpl/results" className="btn-outline">View HPL Results</Link>
               <Link to="/hpl/leaderboard" className="btn-accent">View Leaderboard</Link>
+              <Link to="/leader/login" className="rounded-full bg-saffron-soft px-5 py-3 text-sm font-semibold text-bark hover:bg-saffron transition">Captain Login →</Link>
             </div>
           </div>
+
           <div className="card">
             <h2 className="text-2xl font-semibold">About HPL</h2>
             <p className="mt-3 text-sm text-bark-soft">HPL is an annual student-organised initiative in which final-year students organise sports and cultural activities to help residents interact, communicate more freely, develop friendships across batches, and feel comfortable in the Home. Activities may include cricket, football, volleyball, badminton, chess, carrom, other sports, and cultural competitions.</p>

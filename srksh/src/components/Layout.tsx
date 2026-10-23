@@ -80,8 +80,10 @@ function Footer() {
       </div>
       <div className="border-t border-sand/10 py-5 text-center text-xs text-sand/60">
         © {new Date().getFullYear()} Sri Ramakrishna Students Home (SRKSH), Bengaluru ·{' '}
+        <Link to="/leader/login" className="hover:text-saffron">Team Leader Portal</Link> ·{' '}
         <Link to="/admin" className="hover:text-saffron">Admin</Link>
       </div>
+
     </footer>
   )
 }

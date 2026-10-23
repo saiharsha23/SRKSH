@@ -27,3 +27,5 @@ export interface SiteSettings {
   contact_email: string | null; contact_phone: string | null; contact_address: string | null
   facebook_url: string | null; instagram_url: string | null; youtube_url: string | null
 }
+export interface TeamCredential { team_id: string; pin: string; updated_at?: string }
+export interface LeaderSession { teamId: string; teamName: string; captainName: string; pin: string }

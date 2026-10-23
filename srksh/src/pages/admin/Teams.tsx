@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Loader2, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Copy, KeyRound, Loader2, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react'
 import { supabase, uploadImage, removeImage, imageUrl } from '../../lib/supabase'
 import { useHpl } from '../../lib/data'
 import type { Team } from '../../types'
@@ -9,13 +9,14 @@ import { Field, ImageField, PageTitle, errMsg } from './common'
 interface MemberDraft { key: string; id?: string; name: string; file: File | null; photoPath: string | null; removePhoto: boolean }
 const blankMember = (): MemberDraft => ({ key: crypto.randomUUID(), name: '', file: null, photoPath: null, removePhoto: false })
 
-function TeamForm({ team, editionId, onClose, onSaved }: { team: Team | null; editionId: string; onClose: () => void; onSaved: () => void }) {
+function TeamForm({ team, editionId, initialPin, onClose, onSaved }: { team: Team | null; editionId: string; initialPin?: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast()
   const [name, setName] = useState(team?.name ?? '')
   const [colour, setColour] = useState(team?.colour ?? '#D98E2B')
   const [useColour, setUseColour] = useState(!!team?.colour || !team)
   const [description, setDescription] = useState(team?.description ?? '')
   const [captain, setCaptain] = useState(team?.captain_name ?? '')
+  const [pin, setPin] = useState(initialPin ?? '')
   const [logo, setLogo] = useState<File | null>(null); const [logoRm, setLogoRm] = useState(false)
   const [capPhoto, setCapPhoto] = useState<File | null>(null); const [capRm, setCapRm] = useState(false)
   const [members, setMembers] = useState<MemberDraft[]>(
@@ -31,6 +32,7 @@ function TeamForm({ team, editionId, onClose, onSaved }: { team: Team | null; ed
     const e: string[] = []
     if (!name.trim()) e.push('Team name is required.')
     if (!captain.trim()) e.push('Captain name is required.')
+    if (pin.trim() && pin.trim().length < 3) e.push('Leader passcode must be at least 3 characters long.')
     const seen = new Map<string, number>()
     members.filter(m => m.name.trim()).forEach(m => {
       const k = m.name.trim().toLowerCase().replace(/\s+/g, ' ')
@@ -83,6 +85,10 @@ function TeamForm({ team, editionId, onClose, onSaved }: { team: Team | null; ed
           const { error } = await supabase.from('team_members').insert({ team_id: teamId, name: m.name.trim(), photo_path, sort_order: i }); if (error) throw error
         }
       }
+      if (pin.trim()) {
+        const { error: pinErr } = await supabase.rpc('admin_set_team_pin', { p_team_id: teamId, p_pin: pin.trim() })
+        if (pinErr) throw pinErr
+      }
       await Promise.all(toDelete.map(p => removeImage(p)))
       toast('success', team ? 'Team updated.' : 'Team created.')
       onSaved()
@@ -112,6 +118,25 @@ function TeamForm({ team, editionId, onClose, onSaved }: { team: Team | null; ed
         <div className="grid gap-4 rounded-2xl bg-cream/70 p-4 sm:grid-cols-2">
           <Field label="Captain name *"><input className="input" value={captain} onChange={e => setCaptain(e.target.value)} required /></Field>
           <ImageField label="Captain photo" round existingPath={team?.captain_photo_path} file={capPhoto} onFile={f => { setCapPhoto(f); if (f) setCapRm(false) }} removed={capRm} onRemove={() => setCapRm(true)} />
+        </div>
+        <div className="rounded-2xl bg-cream/70 p-4">
+          <div className="flex items-center justify-between">
+            <span className="label !mb-0 flex items-center gap-1.5"><KeyRound className="h-4 w-4 text-terracotta" /> Leader Passcode / PIN</span>
+            <button
+              type="button"
+              className="btn-outline btn-sm text-xs"
+              onClick={() => setPin(Math.floor(100000 + Math.random() * 900000).toString())}
+            >
+              Generate PIN
+            </button>
+          </div>
+          <p className="mt-1 mb-2 text-xs text-bark-soft">Team captains use this passcode to log in at <code>/leader/login</code> to register for sports and select the squad.</p>
+          <input
+            className="input max-w-xs font-mono tracking-wider"
+            placeholder="e.g. 583921"
+            value={pin}
+            onChange={e => setPin(e.target.value)}
+          />
         </div>
         <div>
           <div className="mb-2 flex items-center justify-between"><span className="label !mb-0">Team members ({members.filter(m => m.name.trim()).length})</span>
@@ -149,6 +174,29 @@ export default function Teams() {
   const [editing, setEditing] = useState<Team | 'new' | null>(null)
   const [del, setDel] = useState<Team | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pins, setPins] = useState<Record<string, string>>({})
+
+  const loadPins = async () => {
+    try {
+      const { data: creds } = await supabase.from('team_credentials').select('team_id, pin')
+      if (creds) {
+        const map: Record<string, string> = {}
+        creds.forEach((d: { team_id: string; pin: string }) => { map[d.team_id] = d.pin })
+        setPins(map)
+      }
+    } catch {
+      // In case team_credentials table isn't migrated yet
+    }
+  }
+
+  useEffect(() => { void loadPins() }, [data])
+
+  function copyCredentials(t: Team, pin: string) {
+    const url = `${window.location.origin}/leader/login`
+    const text = `🏆 SRKSH HPL — Team Leader Login\nTeam: ${t.name}\nCaptain: ${t.captain_name}\nPasscode: ${pin}\nLogin here: ${url}`
+    void navigator.clipboard.writeText(text)
+    toast('success', `Login credentials for ${t.name} copied to clipboard!`)
+  }
 
   async function remove(t: Team) {
     setBusy(true)
@@ -157,7 +205,7 @@ export default function Teams() {
       if (count) { toast('error', `"${t.name}" appears in ${count} saved result(s), so it cannot be deleted. Reset or edit those results first to protect the history.`); return }
       const { error } = await supabase.from('teams').delete().eq('id', t.id); if (error) throw error
       await Promise.all([t.logo_path, t.captain_photo_path, ...(t.team_members ?? []).map(m => m.photo_path)].map(p => removeImage(p)))
-      toast('success', 'Team deleted.'); setDel(null); void reload()
+      toast('success', 'Team deleted.'); setDel(null); void reload(); void loadPins()
     } catch (e) { toast('error', errMsg(e)) } finally { setBusy(false) }
   }
 
@@ -180,6 +228,24 @@ export default function Teams() {
                 </div>
               </div>
               <p className="mt-3 line-clamp-3 text-sm text-bark-soft">{(t.team_members ?? []).map(m => m.name).join(', ') || 'No members yet'}</p>
+              
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sand/30 p-2.5 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-terracotta" />
+                  <span className="font-medium text-bark-soft">Leader Passcode:</span>
+                  <span className="font-mono font-bold text-bark">{pins[t.id] ?? 'Not set'}</span>
+                </div>
+                {pins[t.id] && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-bark shadow-xs ring-1 ring-sand hover:bg-sand/40"
+                    onClick={() => copyCredentials(t, pins[t.id])}
+                  >
+                    <Copy className="h-3 w-3" /> Copy login info
+                  </button>
+                )}
+              </div>
+
               <div className="mt-4 flex gap-2">
                 <button className="btn-outline btn-sm" onClick={() => setEditing(t)}><Pencil className="h-3 w-3" />Edit</button>
                 <button className="btn-sm inline-flex items-center gap-1 rounded-full px-4 py-2 text-xs font-medium text-red-700 hover:bg-red-50" onClick={() => setDel(t)}><Trash2 className="h-3 w-3" />Delete</button>
@@ -188,8 +254,17 @@ export default function Teams() {
           ))}
         </div>
       )}
-      {editing && <TeamForm team={editing === 'new' ? null : editing} editionId={data.edition.id} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void reload() }} />}
+      {editing && (
+        <TeamForm
+          team={editing === 'new' ? null : editing}
+          editionId={data.edition.id}
+          initialPin={editing !== 'new' ? pins[editing.id] : ''}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); void reload(); void loadPins() }}
+        />
+      )}
       <ConfirmDialog open={!!del} busy={busy} title={`Delete ${del?.name}?`} message="This removes the team and its roster permanently. Teams that appear in saved results cannot be deleted." onCancel={() => setDel(null)} onConfirm={() => del && void remove(del)} />
     </>
   )
 }
+
