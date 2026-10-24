@@ -64,7 +64,16 @@ export async function getSportBundle(editionId: string): Promise<SportBundle> {
   return { sports, sportTeams: must(st) as SportTeam[], participants: must(pa) as Participant[], results, placements }
 }
 export async function getGallery() {
-  return must(await supabase.from('gallery_images').select('*').eq('is_published', true).order('created_at', { ascending: false })) as GalleryImage[]
+  try {
+    const res = await supabase.from('gallery_images').select('*').eq('is_published', true)
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (!res.error) return (res.data ?? []) as GalleryImage[]
+  } catch {
+    // fallback if is_pinned column does not exist yet
+  }
+  const fallback = must(await supabase.from('gallery_images').select('*').eq('is_published', true).order('created_at', { ascending: false })) as GalleryImage[]
+  return fallback.sort((a, b) => Number(b.is_pinned ?? false) - Number(a.is_pinned ?? false))
 }
 export async function getAbout() {
   return must(await supabase.from('about_images').select('*').order('slot')) as AboutImage[]

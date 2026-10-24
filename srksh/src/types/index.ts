@@ -22,7 +22,7 @@ export interface LeaderRow {
   captain_name: string; captain_photo_path: string | null
   total_points: number; wins: number; runner_ups: number; rank: number
 }
-export interface GalleryImage { id: string; title: string | null; caption: string | null; category: string | null; storage_path: string; created_at: string }
+export interface GalleryImage { id: string; title: string | null; caption: string | null; category: string | null; storage_path: string; is_published?: boolean; is_pinned?: boolean; created_at: string }
 export interface AboutImage { slot: number; title: string | null; caption: string | null; storage_path: string }
 export interface SiteSettings {
   contact_email: string | null; contact_phone: string | null; contact_address: string | null

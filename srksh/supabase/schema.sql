@@ -53,10 +53,12 @@ create table if not exists public.gallery_images (
   category text,
   storage_path text not null,
   is_published boolean not null default true,
+  is_pinned boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index if not exists gallery_images_created_idx on public.gallery_images (created_at desc);
+create index if not exists gallery_images_pinned_idx on public.gallery_images (is_pinned desc, created_at desc);
 
 -- ---------- HPL editions ----------
 create table if not exists public.hpl_editions (
