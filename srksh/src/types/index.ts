@@ -10,8 +10,9 @@ export interface Team {
 }
 export interface Sport {
   id: string; edition_id: string; name: string; category: string | null; description: string | null
-  image_path: string | null; status: SportStatus; created_at: string
+  image_path: string | null; status: SportStatus; registration_deadline: string | null; created_at: string
 }
+
 export interface SportTeam { sport_id: string; team_id: string }
 export interface Participant { id: string; sport_id: string; team_id: string; member_id: string | null; player_name: string; is_manual: boolean }
 export interface SportResult { id: string; sport_id: string; status: 'pending' | 'completed'; notes: string | null }

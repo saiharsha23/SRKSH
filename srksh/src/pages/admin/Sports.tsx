@@ -1,23 +1,42 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Calendar, Check, Clock, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { supabase, uploadImage, removeImage, imageUrl } from '../../lib/supabase'
 import { useHpl, type SportBundle } from '../../lib/data'
 import type { Sport, SportStatus, Team } from '../../types'
 import { Badge, ConfirmDialog, EmptyState, ErrorBox, Img, Modal, Spinner, useToast, ColourDot } from '../../components/ui'
 import { Field, ImageField, PageTitle, errMsg } from './common'
-import { fmtPoints, ordinal } from '../../lib/format'
+import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal, toLocalIso } from '../../lib/format'
 
 /* ---------- Sport create / edit form ---------- */
 function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null; editionId: string; onClose: () => void; onSaved: (id: string) => void }) {
   const toast = useToast()
+
   const [name, setName] = useState(sport?.name ?? '')
   const [category, setCategory] = useState(sport?.category ?? '')
   const [description, setDescription] = useState(sport?.description ?? '')
   const [status, setStatus] = useState<SportStatus>(sport?.status ?? 'upcoming')
+  const [deadline, setDeadline] = useState(toLocalIso(sport?.registration_deadline))
   const [img, setImg] = useState<File | null>(null); const [imgRm, setImgRm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+
+  function applyPreset(preset: 'today_6pm' | 'today_midnight' | 'tomorrow_6pm' | 'in_2days_6pm') {
+    const d = new Date()
+    if (preset === 'today_6pm') {
+      d.setHours(18, 0, 0, 0)
+      if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1)
+    } else if (preset === 'today_midnight') {
+      d.setHours(23, 59, 0, 0)
+    } else if (preset === 'tomorrow_6pm') {
+      d.setDate(d.getDate() + 1)
+      d.setHours(18, 0, 0, 0)
+    } else if (preset === 'in_2days_6pm') {
+      d.setDate(d.getDate() + 2)
+      d.setHours(18, 0, 0, 0)
+    }
+    setDeadline(toLocalIso(d.toISOString()))
+  }
 
   async function save() {
     if (!name.trim()) { setErr('Sport name is required.'); return }
@@ -28,7 +47,16 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
       const old = image_path
       if (img) { uploaded = await uploadImage(img, 'sports'); image_path = uploaded }
       else if (imgRm) image_path = null
-      const payload = { name: name.trim(), category: category.trim() || null, description: description.trim() || null, status, image_path, updated_at: new Date().toISOString() }
+      const registration_deadline = deadline ? new Date(deadline).toISOString() : null
+      const payload = {
+        name: name.trim(),
+        category: category.trim() || null,
+        description: description.trim() || null,
+        status,
+        registration_deadline,
+        image_path,
+        updated_at: new Date().toISOString(),
+      }
       let id = sport?.id
       if (id) { const { error } = await supabase.from('sports').update(payload).eq('id', id); if (error) throw error }
       else { const { data, error } = await supabase.from('sports').insert({ ...payload, edition_id: editionId }).select('id').single(); if (error) throw error; id = data.id }
@@ -44,11 +72,44 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
         <Field label="Sport name *"><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Cricket" required /></Field>
         <Field label="Type / category (optional)"><input className="input" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Outdoor, Indoor, Cultural" /></Field>
         <Field label="Description (optional)"><textarea className="input" rows={3} value={description} onChange={e => setDescription(e.target.value)} /></Field>
-        <Field label="Status">
-          <select className="input" value={status} onChange={e => setStatus(e.target.value as SportStatus)}>
-            <option value="upcoming">Upcoming</option><option value="in_progress">In Progress</option><option value="completed">Completed</option>
-          </select>
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Status">
+            <select className="input" value={status} onChange={e => setStatus(e.target.value as SportStatus)}>
+              <option value="upcoming">Upcoming</option><option value="in_progress">In Progress</option><option value="completed">Completed</option>
+            </select>
+          </Field>
+          <Field label="Registration deadline (optional)" hint="Captains cannot register after this">
+            <div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="datetime-local"
+                  className="input text-xs"
+                  value={deadline}
+                  onChange={e => setDeadline(e.target.value)}
+                />
+                {deadline && (
+                  <button type="button" className="btn-outline btn-sm text-xs px-2" onClick={() => setDeadline('')}>
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <button type="button" onClick={() => applyPreset('today_6pm')} className="rounded-md bg-sand/40 px-2 py-0.5 text-[10px] text-bark hover:bg-sand">
+                  Today 6 PM
+                </button>
+                <button type="button" onClick={() => applyPreset('today_midnight')} className="rounded-md bg-sand/40 px-2 py-0.5 text-[10px] text-bark hover:bg-sand">
+                  Tonight 11:59 PM
+                </button>
+                <button type="button" onClick={() => applyPreset('tomorrow_6pm')} className="rounded-md bg-sand/40 px-2 py-0.5 text-[10px] text-bark hover:bg-sand">
+                  Tomorrow 6 PM
+                </button>
+                <button type="button" onClick={() => applyPreset('in_2days_6pm')} className="rounded-md bg-sand/40 px-2 py-0.5 text-[10px] text-bark hover:bg-sand">
+                  +2 Days
+                </button>
+              </div>
+            </div>
+          </Field>
+        </div>
         <ImageField label="Sport image / icon (optional)" existingPath={sport?.image_path} file={img} onFile={setImg} removed={imgRm} onRemove={() => setImgRm(true)} />
         <div className="flex justify-end gap-3 border-t border-sand pt-4">
           <button type="button" className="btn-outline" onClick={onClose} disabled={busy}>Cancel</button>
@@ -83,6 +144,20 @@ export default function Sports() {
                   <Badge status={s.status} />
                 </div>
                 <p className="mt-4 text-sm text-bark-soft">{bundle.sportTeams.filter(t => t.sport_id === s.id).length} team(s) · {bundle.participants.filter(p => p.sport_id === s.id).length} player(s) · Result: {res?.status === 'completed' ? 'Completed' : 'Pending'}</p>
+                {s.registration_deadline ? (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs">
+                    <Clock className={`h-3.5 w-3.5 shrink-0 ${isDeadlinePassed(s.registration_deadline) ? 'text-red-600' : 'text-terracotta'}`} />
+                    <span className={isDeadlinePassed(s.registration_deadline) ? 'font-semibold text-red-700' : 'font-medium text-bark-soft'}>
+                      {isDeadlinePassed(s.registration_deadline) ? 'Closed: ' : 'Deadline: '}
+                      {fmtDateTime(s.registration_deadline)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-bark-faint">
+                    <Clock className="h-3.5 w-3.5 text-sand" />
+                    <span>No deadline set (Open)</span>
+                  </div>
+                )}
               </Link>
             )
           })}
@@ -292,6 +367,145 @@ function ResultEditor({ sport, teams, bundle, onChanged }: { sport: Sport; teams
   )
 }
 
+/* ---------- Dedicated Registration Deadline Modal ---------- */
+function DeadlineModal({
+  sport,
+  onClose,
+  onSaved,
+}: {
+  sport: Sport
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const [deadline, setDeadline] = useState(toLocalIso(sport.registration_deadline))
+  const [busy, setBusy] = useState(false)
+
+  function applyPreset(preset: 'today_6pm' | 'today_midnight' | 'tomorrow_6pm' | 'in_2days_6pm') {
+    const d = new Date()
+    if (preset === 'today_6pm') {
+      d.setHours(18, 0, 0, 0)
+      if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1)
+    } else if (preset === 'today_midnight') {
+      d.setHours(23, 59, 0, 0)
+    } else if (preset === 'tomorrow_6pm') {
+      d.setDate(d.getDate() + 1)
+      d.setHours(18, 0, 0, 0)
+    } else if (preset === 'in_2days_6pm') {
+      d.setDate(d.getDate() + 2)
+      d.setHours(18, 0, 0, 0)
+    }
+    setDeadline(toLocalIso(d.toISOString()))
+  }
+
+  async function save(val: string | null) {
+    setBusy(true)
+    try {
+      const iso = val ? new Date(val).toISOString() : null
+      const { error } = await supabase
+        .from('sports')
+        .update({ registration_deadline: iso, updated_at: new Date().toISOString() })
+        .eq('id', sport.id)
+      if (error) throw error
+      toast('success', iso ? 'Registration deadline updated.' : 'Deadline removed — registration is open.')
+      onSaved()
+      onClose()
+    } catch (e) {
+      toast('error', `Could not update deadline: ${errMsg(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open title={`Registration Deadline · ${sport.name}`} onClose={onClose}>
+      <form
+        className="space-y-4"
+        onSubmit={e => {
+          e.preventDefault()
+          void save(deadline)
+        }}
+      >
+        <p className="text-sm text-bark-soft">
+          Set a registration cutoff date and time. After this deadline, team captains cannot register, unregister, or alter their playing squad in the Leader Portal.
+        </p>
+
+        <Field label="Registration deadline" hint="In your local timezone">
+          <input
+            type="datetime-local"
+            className="input"
+            value={deadline}
+            onChange={e => setDeadline(e.target.value)}
+          />
+        </Field>
+
+        <div>
+          <label className="text-xs font-medium text-bark-soft">Quick Presets:</label>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => applyPreset('today_6pm')}
+              className="rounded-full bg-sand/40 px-3 py-1 text-xs font-medium text-bark hover:bg-sand"
+            >
+              Today 6 PM
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('today_midnight')}
+              className="rounded-full bg-sand/40 px-3 py-1 text-xs font-medium text-bark hover:bg-sand"
+            >
+              Tonight 11:59 PM
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('tomorrow_6pm')}
+              className="rounded-full bg-sand/40 px-3 py-1 text-xs font-medium text-bark hover:bg-sand"
+            >
+              Tomorrow 6 PM
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('in_2days_6pm')}
+              className="rounded-full bg-sand/40 px-3 py-1 text-xs font-medium text-bark hover:bg-sand"
+            >
+              +2 Days 6 PM
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-sand pt-4">
+          {sport.registration_deadline ? (
+            <button
+              type="button"
+              className="text-xs font-medium text-red-700 hover:underline"
+              onClick={() => void save(null)}
+              disabled={busy}
+            >
+              Remove Deadline (Unlimited)
+            </button>
+          ) : (
+            <span />
+          )}
+
+          <div className="flex gap-2">
+            <button type="button" className="btn-outline" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={busy || !deadline}
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save Deadline
+            </button>
+          </div>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 /* ---------- Sport detail page ---------- */
 export function SportDetail() {
   const { id } = useParams()
@@ -299,8 +513,10 @@ export function SportDetail() {
   const toast = useToast()
   const { data, loading, error, reload } = useHpl()
   const [editing, setEditing] = useState(false)
+  const [deadlineModal, setDeadlineModal] = useState(false)
   const [delOpen, setDelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [busyDeadline, setBusyDeadline] = useState(false)
   const [addTeam, setAddTeam] = useState('')
   const sport = data.bundle.sports.find(s => s.id === id)
   const { teams, bundle } = data
@@ -312,6 +528,61 @@ export function SportDetail() {
   if (loading) return <Spinner />
   if (error) return <ErrorBox message={error} onRetry={reload} />
   if (!sport) return <EmptyState title="Sport not found" action={<Link to="/admin/sports" className="btn-primary">Back to sports</Link>} />
+
+  async function quickCloseDeadline() {
+    setBusyDeadline(true)
+    try {
+      const nowIso = new Date().toISOString()
+      const { error } = await supabase
+        .from('sports')
+        .update({ registration_deadline: nowIso, updated_at: nowIso })
+        .eq('id', sport!.id)
+      if (error) throw error
+      toast('success', 'Registration closed for team leaders.')
+      void reload()
+    } catch (e) {
+      toast('error', `Failed to close registration: ${errMsg(e)}`)
+    } finally {
+      setBusyDeadline(false)
+    }
+  }
+
+  async function extendDeadline(hours: number) {
+    setBusyDeadline(true)
+    try {
+      const current = sport!.registration_deadline ? new Date(sport!.registration_deadline) : new Date()
+      const baseTime = current.getTime() < Date.now() ? Date.now() : current.getTime()
+      const newIso = new Date(baseTime + hours * 3600 * 1000).toISOString()
+      const { error } = await supabase
+        .from('sports')
+        .update({ registration_deadline: newIso, updated_at: new Date().toISOString() })
+        .eq('id', sport!.id)
+      if (error) throw error
+      toast('success', `Deadline extended by ${hours} hours.`)
+      void reload()
+    } catch (e) {
+      toast('error', `Failed to extend deadline: ${errMsg(e)}`)
+    } finally {
+      setBusyDeadline(false)
+    }
+  }
+
+  async function removeDeadline() {
+    setBusyDeadline(true)
+    try {
+      const { error } = await supabase
+        .from('sports')
+        .update({ registration_deadline: null, updated_at: new Date().toISOString() })
+        .eq('id', sport!.id)
+      if (error) throw error
+      toast('success', 'Deadline removed. Registration is now open indefinitely.')
+      void reload()
+    } catch (e) {
+      toast('error', `Failed to remove deadline: ${errMsg(e)}`)
+    } finally {
+      setBusyDeadline(false)
+    }
+  }
 
   async function addTeamToSport() {
     if (!addTeam) return
@@ -333,7 +604,109 @@ export function SportDetail() {
         <div className="flex items-center gap-2"><Badge status={sport.status} />
           <button className="btn-outline btn-sm" onClick={() => setEditing(true)}><Pencil className="h-3 w-3" />Edit</button>
           <button className="btn-sm inline-flex items-center gap-1 rounded-full px-4 py-2 text-xs font-medium text-red-700 hover:bg-red-50" onClick={() => setDelOpen(true)}><Trash2 className="h-3 w-3" />Delete</button></div>} />
-      {sport.description && <p className="-mt-4 mb-6 max-w-2xl text-sm text-bark-soft">{sport.description}</p>}
+
+      {/* Registration Deadline & Access Controls (Admin-managed) */}
+      <section className="mb-6 rounded-3xl border border-sand bg-white/90 p-5 shadow-soft">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3.5">
+            <div className={`mt-0.5 rounded-2xl p-3 ${
+              sport.registration_deadline
+                ? isDeadlinePassed(sport.registration_deadline)
+                  ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
+                  : 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200'
+                : 'bg-sand/30 text-bark-soft'
+            }`}>
+              <Clock className="h-5 w-5" />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-bark">Registration Deadline</h2>
+                {sport.registration_deadline ? (
+                  isDeadlinePassed(sport.registration_deadline) ? (
+                    <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-800">
+                      Registration Closed
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                      Registration Open
+                    </span>
+                  )
+                ) : (
+                  <span className="rounded-full bg-sand/50 px-2.5 py-0.5 text-xs font-medium text-bark-soft">
+                    No Deadline Set (Open)
+                  </span>
+                )}
+              </div>
+
+              <p className="mt-1 text-sm text-bark-soft">
+                {sport.registration_deadline ? (
+                  <>
+                    Cutoff: <strong className="text-bark">{fmtDateTime(sport.registration_deadline)}</strong>
+                    {isDeadlinePassed(sport.registration_deadline) ? (
+                      <span className="text-red-700 font-medium"> — Deadline passed. Team captains cannot register or alter squads.</span>
+                    ) : (
+                      <span className="text-emerald-700 font-medium"> — Team captains can register and choose playing squads until this time.</span>
+                    )}
+                  </>
+                ) : (
+                  'No registration cutoff configured. Team leaders can register and manage squads anytime in the Leader Portal.'
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Admin Actions */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              className="btn-outline btn-sm inline-flex items-center gap-1.5"
+              onClick={() => setDeadlineModal(true)}
+            >
+              <Calendar className="h-3.5 w-3.5 text-terracotta" />
+              <span>{sport.registration_deadline ? 'Change Deadline' : 'Set Deadline'}</span>
+            </button>
+
+            {sport.registration_deadline && !isDeadlinePassed(sport.registration_deadline) && (
+              <button
+                type="button"
+                className="btn-sm rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                onClick={() => void quickCloseDeadline()}
+                disabled={busyDeadline}
+                title="Immediately close registration for team leaders"
+              >
+                Close Now
+              </button>
+            )}
+
+            {sport.registration_deadline && isDeadlinePassed(sport.registration_deadline) && (
+              <button
+                type="button"
+                className="btn-sm rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                onClick={() => void extendDeadline(24)}
+                disabled={busyDeadline}
+                title="Re-open and extend deadline by 24 hours"
+              >
+                Extend +24h
+              </button>
+            )}
+
+            {sport.registration_deadline && (
+              <button
+                type="button"
+                className="btn-sm rounded-full px-2.5 py-1.5 text-xs text-bark-soft hover:text-red-700 hover:bg-red-50"
+                onClick={() => void removeDeadline()}
+                disabled={busyDeadline}
+                title="Remove deadline completely"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {sport.description && <p className="-mt-2 mb-6 max-w-2xl text-sm text-bark-soft">{sport.description}</p>}
 
       <section className="card mb-8">
         <h2 className="mb-1 text-2xl font-semibold">Participating teams and players</h2>
@@ -367,6 +740,7 @@ export function SportDetail() {
       </section>
 
       {editing && data.edition && <SportForm sport={sport} editionId={data.edition.id} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload() }} />}
+      {deadlineModal && <DeadlineModal sport={sport} onClose={() => setDeadlineModal(false)} onSaved={() => { setDeadlineModal(false); void reload() }} />}
       <ConfirmDialog open={delOpen} busy={busy} title={`Delete ${sport.name}?`} message={result?.status === 'completed' ? 'This sport has a completed result. Deleting it removes the result and the leaderboard will be recalculated without its points.' : 'This deletes the sport, its participants and any pending result.'} onCancel={() => setDelOpen(false)} onConfirm={() => void deleteSport()} />
     </>
   )

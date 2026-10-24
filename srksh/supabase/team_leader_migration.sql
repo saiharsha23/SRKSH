@@ -53,6 +53,10 @@ begin
 end $$;
 grant execute on function public.admin_set_team_pin(uuid, text) to authenticated;
 
+-- Ensure registration_deadline exists on sports table
+alter table public.sports
+  add column if not exists registration_deadline timestamptz;
+
 -- ---------- 3. Team leader register / unregister sport ----------
 create or replace function public.team_leader_register_sport(
   p_team_id uuid,
@@ -67,6 +71,7 @@ set search_path = public
 as $$
 declare
   v_status text;
+  v_deadline timestamptz;
   v_has_placement boolean;
 begin
   -- Validate PIN
@@ -74,13 +79,16 @@ begin
     raise exception 'Invalid team passcode';
   end if;
 
-  -- Validate sport
-  select status into v_status from public.sports where id = p_sport_id;
+  -- Validate sport and registration deadline
+  select status, registration_deadline into v_status, v_deadline from public.sports where id = p_sport_id;
   if v_status is null then
     raise exception 'Sport not found';
   end if;
   if v_status = 'completed' then
     raise exception 'Cannot change registration for a completed sport';
+  end if;
+  if v_deadline is not null and now() > v_deadline then
+    raise exception 'The registration deadline for this sport has passed.';
   end if;
 
   if p_register then
@@ -118,6 +126,7 @@ set search_path = public
 as $$
 declare
   v_status text;
+  v_deadline timestamptz;
   v_member record;
 begin
   -- Validate PIN
@@ -125,13 +134,16 @@ begin
     raise exception 'Invalid team passcode';
   end if;
 
-  -- Validate sport status
-  select status into v_status from public.sports where id = p_sport_id;
+  -- Validate sport status and registration deadline
+  select status, registration_deadline into v_status, v_deadline from public.sports where id = p_sport_id;
   if v_status is null then
     raise exception 'Sport not found';
   end if;
   if v_status = 'completed' then
     raise exception 'Cannot edit squad for a completed sport';
+  end if;
+  if v_deadline is not null and now() > v_deadline then
+    raise exception 'The registration deadline for this sport has passed.';
   end if;
 
   -- Auto-register team in sport if not already registered
@@ -142,7 +154,6 @@ begin
   -- Remove existing participants for this team in this sport
   delete from public.sport_participants
   where sport_id = p_sport_id and team_id = p_team_id;
-
 
   -- Insert selected members from the official roster in the exact order selected by the leader
   if p_member_ids is not null and array_length(p_member_ids, 1) > 0 then

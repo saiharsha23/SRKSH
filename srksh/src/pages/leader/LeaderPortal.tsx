@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  Clock,
   ExternalLink,
   LogOut,
   Plus,
@@ -34,7 +35,7 @@ import {
   useToast,
 } from '../../components/ui'
 import { useTitle } from '../../lib/useTitle'
-import { ordinal } from '../../lib/format'
+import { fmtDateTime, isDeadlinePassed, ordinal } from '../../lib/format'
 
 /* ---------- Squad Selection Modal ---------- */
 function SquadModal({
@@ -53,6 +54,7 @@ function SquadModal({
   const toast = useToast()
   const { saveSquad } = useLeaderAuth()
   const roster = team.team_members ?? []
+  const deadlinePassed = isDeadlinePassed(sport.registration_deadline)
 
   // Keep ordered array of selected member IDs (by selection order, NOT ascending)
   const [selectedIds, setSelectedIds] = useState<string[]>(currentMemberIds)
@@ -81,6 +83,7 @@ function SquadModal({
   }, [roster, query, selectedIds])
 
   function toggleMember(id: string) {
+    if (deadlinePassed) return
     setSelectedIds(prev => {
       if (prev.includes(id)) {
         return prev.filter(x => x !== id)
@@ -91,16 +94,22 @@ function SquadModal({
   }
 
   function selectAll() {
+    if (deadlinePassed) return
     const existing = new Set(selectedIds)
     const toAdd = roster.filter(m => !existing.has(m.id)).map(m => m.id)
     setSelectedIds([...selectedIds, ...toAdd])
   }
 
   function clearAll() {
+    if (deadlinePassed) return
     setSelectedIds([])
   }
 
   async function handleSave() {
+    if (deadlinePassed) {
+      setError('The registration deadline for this sport has passed. You cannot modify the squad.')
+      return
+    }
     setError('')
     setSaving(true)
     try {
@@ -130,7 +139,7 @@ function SquadModal({
               type="button"
               className="btn-outline btn-sm text-xs"
               onClick={selectAll}
-              disabled={saving || roster.length === 0}
+              disabled={saving || roster.length === 0 || deadlinePassed}
             >
               Select All
             </button>
@@ -138,12 +147,19 @@ function SquadModal({
               type="button"
               className="btn-outline btn-sm text-xs"
               onClick={clearAll}
-              disabled={saving || selectedIds.length === 0}
+              disabled={saving || selectedIds.length === 0 || deadlinePassed}
             >
               Clear
             </button>
           </div>
         </div>
+
+        {deadlinePassed && (
+          <div role="alert" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 flex items-center gap-2">
+            <Clock className="h-4 w-4 shrink-0 text-amber-600" />
+            <span>The registration deadline for this sport has passed. The squad is locked and cannot be edited.</span>
+          </div>
+        )}
 
         {/* Selected Squad Lineup Strip (Ordered by Selection) */}
         {selectedIds.length > 0 && (
@@ -258,22 +274,24 @@ function SquadModal({
 
         <div className="flex justify-end gap-3 border-t border-sand pt-4">
           <button type="button" className="btn-outline" onClick={onClose} disabled={saving}>
-            Cancel
+            {deadlinePassed ? 'Close' : 'Cancel'}
           </button>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => void handleSave()}
-            disabled={saving}
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Saving...
-              </>
-            ) : (
-              `Confirm Squad (${selectedIds.length})`
-            )}
-          </button>
+          {!deadlinePassed && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleSave()}
+              disabled={saving}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+                </>
+              ) : (
+                `Confirm Squad (${selectedIds.length})`
+              )}
+            </button>
+          )}
         </div>
       </div>
     </Modal>
@@ -615,6 +633,25 @@ export default function LeaderPortal() {
                         <p className="mt-3 line-clamp-2 text-xs text-bark-soft">{s.description}</p>
                       )}
 
+                      {/* Registration Deadline Alert */}
+                      {s.registration_deadline ? (
+                        <div className={`mt-3 flex items-center gap-1.5 rounded-lg p-2 text-xs ${
+                          isDeadlinePassed(s.registration_deadline) ? 'bg-red-50 text-red-800 ring-1 ring-red-200' : 'bg-sand/30 text-bark'
+                        }`}>
+                          <Clock className={`h-3.5 w-3.5 shrink-0 ${isDeadlinePassed(s.registration_deadline) ? 'text-red-600' : 'text-terracotta'}`} />
+                          <span>
+                            {isDeadlinePassed(s.registration_deadline) ? 'Registration closed: ' : 'Registration closes: '}
+                            <strong>{fmtDateTime(s.registration_deadline)}</strong>
+                            {isDeadlinePassed(s.registration_deadline) && ' (Deadline passed)'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-sand/20 p-2 text-xs text-bark-soft">
+                          <Clock className="h-3.5 w-3.5 text-sand shrink-0" />
+                          <span>Registration open (No cutoff deadline set)</span>
+                        </div>
+                      )}
+
                       {/* Registration & Squad Status Box */}
                       <div className="mt-4 rounded-xl bg-sand/20 p-3">
                         <div className="flex items-center justify-between text-xs font-medium">
@@ -664,6 +701,21 @@ export default function LeaderPortal() {
                           <span className="text-xs font-medium text-bark-faint italic">
                             Sport completed — squad locked
                           </span>
+                        ) : isDeadlinePassed(s.registration_deadline) ? (
+                          <div className="flex w-full items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-red-700 flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" /> Registration closed
+                            </span>
+                            {isRegistered && (
+                              <button
+                                type="button"
+                                className="btn-outline btn-sm text-xs"
+                                onClick={() => setSelectedSport(s)}
+                              >
+                                View Squad
+                              </button>
+                            )}
+                          </div>
                         ) : isRegistered ? (
                           <>
                             <button
@@ -700,6 +752,7 @@ export default function LeaderPortal() {
                           </button>
                         )}
                       </div>
+
                     </div>
                   )
                 })}

@@ -105,6 +105,7 @@ create table if not exists public.sports (
   description text,
   image_path text,
   status text not null default 'upcoming' check (status in ('upcoming','in_progress','completed')),
+  registration_deadline timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
