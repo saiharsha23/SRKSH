@@ -127,6 +127,7 @@ create table if not exists public.sport_participants (
   member_id uuid references public.team_members(id) on delete set null,
   player_name text not null,            -- snapshot so history survives roster edits
   is_manual boolean not null default false,
+  sort_order int not null default 0,
   created_at timestamptz not null default now(),
   foreign key (sport_id, team_id) references public.sport_teams(sport_id, team_id) on delete cascade
 );

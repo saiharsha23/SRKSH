@@ -5,7 +5,9 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock,
   ExternalLink,
   LogOut,
@@ -56,7 +58,7 @@ function SquadModal({
   const roster = team.team_members ?? []
   const deadlinePassed = isDeadlinePassed(sport.registration_deadline)
 
-  // Keep ordered array of selected member IDs (by selection order, NOT ascending)
+  // Keep ordered array of selected member IDs in exact selection order
   const [selectedIds, setSelectedIds] = useState<string[]>(currentMemberIds)
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,23 +66,12 @@ function SquadModal({
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
-  // Display by selected one first (in exact selection order), then remaining available members
-  const sortedRoster = useMemo(() => {
+  // STABLE roster order: does NOT re-sort when items are clicked so rows never jump!
+  const stableRoster = useMemo(() => {
     const q = query.trim().toLowerCase()
     const pool = q ? roster.filter(m => m.name.toLowerCase().includes(q)) : [...roster]
-
-    return pool.sort((a, b) => {
-      const aIdx = selectedIds.indexOf(a.id)
-      const bIdx = selectedIds.indexOf(b.id)
-      const aSel = aIdx !== -1
-      const bSel = bIdx !== -1
-
-      if (aSel && bSel) return aIdx - bIdx // preserve leader selection order
-      if (aSel && !bSel) return -1 // selected member displayed first
-      if (!aSel && bSel) return 1
-      return (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)
-    })
-  }, [roster, query, selectedIds])
+    return pool.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+  }, [roster, query])
 
   function toggleMember(id: string) {
     if (deadlinePassed) return
@@ -88,15 +79,28 @@ function SquadModal({
       if (prev.includes(id)) {
         return prev.filter(x => x !== id)
       } else {
-        return [...prev, id] // added in order of selection
+        return [...prev, id] // added to end in exact order of selection
       }
+    })
+  }
+
+  function moveMember(index: number, direction: 'up' | 'down') {
+    if (deadlinePassed) return
+    const target = direction === 'up' ? index - 1 : index + 1
+    if (target < 0 || target >= selectedIds.length) return
+    setSelectedIds(prev => {
+      const copy = [...prev]
+      const temp = copy[index]
+      copy[index] = copy[target]
+      copy[target] = temp
+      return copy
     })
   }
 
   function selectAll() {
     if (deadlinePassed) return
     const existing = new Set(selectedIds)
-    const toAdd = roster.filter(m => !existing.has(m.id)).map(m => m.id)
+    const toAdd = stableRoster.filter(m => !existing.has(m.id)).map(m => m.id)
     setSelectedIds([...selectedIds, ...toAdd])
   }
 
@@ -169,9 +173,9 @@ function SquadModal({
                 <UserCheck className="h-3.5 w-3.5 text-terracotta" />
                 Selected Squad Lineup ({selectedIds.length})
               </span>
-              <span className="text-[11px] font-normal text-bark-soft">Ordered by selection</span>
+              <span className="text-[11px] font-normal text-bark-soft">Ordered as selected (use ▲ / ▼ to reorder)</span>
             </div>
-            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
               {selectedIds.map((id, idx) => {
                 const member = roster.find(m => m.id === id)
                 if (!member) return null
@@ -183,11 +187,35 @@ function SquadModal({
                     <span className="rounded-full bg-terracotta/15 px-1.5 py-0.2 text-[10px] font-bold text-terracotta">
                       #{idx + 1}
                     </span>
-                    <span className="truncate max-w-[130px]">{member.name}</span>
+                    <span className="truncate max-w-[130px] font-semibold">{member.name}</span>
+                    {!deadlinePassed && (
+                      <span className="inline-flex items-center gap-0.5 ml-1 border-l border-sand/60 pl-1 text-bark-soft">
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => moveMember(idx, 'up')}
+                            className="p-0.5 hover:text-terracotta rounded"
+                            title="Move earlier in lineup"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                        )}
+                        {idx < selectedIds.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() => moveMember(idx, 'down')}
+                            className="p-0.5 hover:text-terracotta rounded"
+                            title="Move later in lineup"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        )}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => toggleMember(id)}
-                      className="text-bark-soft hover:text-red-700"
+                      className="ml-0.5 text-bark-soft hover:text-red-700"
                       title={`Remove ${member.name}`}
                     >
                       ×
@@ -220,11 +248,11 @@ function SquadModal({
           <div className="rounded-xl bg-cream p-6 text-center text-sm text-bark-soft">
             No roster members have been added to {team.name} yet. Please ask an admin to add players to your team roster first.
           </div>
-        ) : sortedRoster.length === 0 ? (
+        ) : stableRoster.length === 0 ? (
           <p className="py-4 text-center text-sm text-bark-soft">No members match your search.</p>
         ) : (
           <div className="max-h-72 overflow-y-auto rounded-xl border border-sand/80 divide-y divide-sand/40">
-            {sortedRoster.map(m => {
+            {stableRoster.map(m => {
               const isChecked = selectedSet.has(m.id)
               const selectedIdx = selectedIds.indexOf(m.id)
               const isCaptain = m.name.trim().toLowerCase() === team.captain_name.trim().toLowerCase()

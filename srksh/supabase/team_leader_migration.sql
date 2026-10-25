@@ -158,15 +158,35 @@ begin
   -- Insert selected members from the official roster in the exact order selected by the leader
   if p_member_ids is not null and array_length(p_member_ids, 1) > 0 then
     for v_member in
-      select tm.id, tm.name
+      select tm.id, tm.name, ord.idx
       from unnest(p_member_ids) with ordinality as ord(id, idx)
       join public.team_members tm on tm.id = ord.id and tm.team_id = p_team_id
       order by ord.idx
     loop
-      insert into public.sport_participants (sport_id, team_id, member_id, player_name, is_manual)
-      values (p_sport_id, p_team_id, v_member.id, v_member.name, false);
+      insert into public.sport_participants (
+        sport_id,
+        team_id,
+        member_id,
+        player_name,
+        is_manual,
+        sort_order,
+        created_at
+      )
+      values (
+        p_sport_id,
+        p_team_id,
+        v_member.id,
+        v_member.name,
+        false,
+        v_member.idx,
+        now() + (v_member.idx * interval '10 milliseconds')
+      );
     end loop;
   end if;
 
 end $$;
 grant execute on function public.team_leader_save_squad(uuid, text, uuid, uuid[]) to anon, authenticated;
+
+-- Ensure sort_order exists on sport_participants
+alter table public.sport_participants
+  add column if not exists sort_order int not null default 0;

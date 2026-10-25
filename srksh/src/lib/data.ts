@@ -57,11 +57,20 @@ export async function getSportBundle(editionId: string): Promise<SportBundle> {
     supabase.from('sport_results').select('*').in('sport_id', ids),
   ])
   const results = must(re) as SportResult[]
+  const rawParticipants = must(pa) as Participant[]
+  const participants = rawParticipants.sort((a, b) => {
+    if (a.sort_order != null && b.sort_order != null && a.sort_order !== b.sort_order) {
+      return a.sort_order - b.sort_order
+    }
+    const tA = a.created_at ? new Date(a.created_at).getTime() : 0
+    const tB = b.created_at ? new Date(b.created_at).getTime() : 0
+    return tA - tB
+  })
   let placements: Placement[] = []
   if (results.length) {
     placements = must(await supabase.from('result_placements').select('*').in('result_id', results.map(r => r.id)).order('placement')) as Placement[]
   }
-  return { sports, sportTeams: must(st) as SportTeam[], participants: must(pa) as Participant[], results, placements }
+  return { sports, sportTeams: must(st) as SportTeam[], participants, results, placements }
 }
 export async function getGallery() {
   try {
