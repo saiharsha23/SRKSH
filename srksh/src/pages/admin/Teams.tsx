@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Copy, KeyRound, Loader2, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react'
+import { Copy, KeyRound, Loader2, MessageCircle, Pencil, Phone, Plus, Trash2, UserPlus, X } from 'lucide-react'
 import { supabase, uploadImage, removeImage, imageUrl } from '../../lib/supabase'
 import { useHpl } from '../../lib/data'
 import type { Team } from '../../types'
 import { ConfirmDialog, EmptyState, ErrorBox, Img, Modal, Spinner, useToast, ColourDot } from '../../components/ui'
 import { Field, ImageField, PageTitle, errMsg } from './common'
+import { cleanWhatsAppPhone } from '../../lib/whatsapp'
 
 interface MemberDraft { key: string; id?: string; name: string; file: File | null; photoPath: string | null; removePhoto: boolean }
 const blankMember = (): MemberDraft => ({ key: crypto.randomUUID(), name: '', file: null, photoPath: null, removePhoto: false })
@@ -16,6 +17,7 @@ function TeamForm({ team, editionId, initialPin, onClose, onSaved }: { team: Tea
   const [useColour, setUseColour] = useState(!!team?.colour || !team)
   const [description, setDescription] = useState(team?.description ?? '')
   const [captain, setCaptain] = useState(team?.captain_name ?? '')
+  const [captainPhone, setCaptainPhone] = useState(team?.captain_phone ?? '')
   const [pin, setPin] = useState(initialPin ?? '')
   const [logo, setLogo] = useState<File | null>(null); const [logoRm, setLogoRm] = useState(false)
   const [capPhoto, setCapPhoto] = useState<File | null>(null); const [capRm, setCapRm] = useState(false)
@@ -60,7 +62,16 @@ function TeamForm({ team, editionId, initialPin, onClose, onSaved }: { team: Tea
       if (capPhoto) { const p = await uploadImage(capPhoto, 'captains'); uploaded.push(p); if (captain_photo_path) toDelete.push(captain_photo_path); captain_photo_path = p }
       else if (capRm && captain_photo_path) { toDelete.push(captain_photo_path); captain_photo_path = null }
 
-      const payload = { name: name.trim(), colour: useColour ? colour : null, description: description.trim() || null, captain_name: captain.trim(), logo_path, captain_photo_path, updated_at: new Date().toISOString() }
+      const payload = {
+        name: name.trim(),
+        colour: useColour ? colour : null,
+        description: description.trim() || null,
+        captain_name: captain.trim(),
+        captain_phone: captainPhone.trim() || null,
+        logo_path,
+        captain_photo_path,
+        updated_at: new Date().toISOString(),
+      }
       let teamId = team?.id
       if (teamId) {
         const { error } = await supabase.from('teams').update(payload).eq('id', teamId); if (error) throw error
@@ -117,7 +128,12 @@ function TeamForm({ team, editionId, initialPin, onClose, onSaved }: { team: Tea
         <ImageField label="Team logo / image (optional)" existingPath={team?.logo_path} file={logo} onFile={setLogo} removed={logoRm} onRemove={() => setLogoRm(true)} />
         <div className="grid gap-4 rounded-2xl bg-cream/70 p-4 sm:grid-cols-2">
           <Field label="Captain name *"><input className="input" value={captain} onChange={e => setCaptain(e.target.value)} required /></Field>
-          <ImageField label="Captain photo" round existingPath={team?.captain_photo_path} file={capPhoto} onFile={f => { setCapPhoto(f); if (f) setCapRm(false) }} removed={capRm} onRemove={() => setCapRm(true)} />
+          <Field label="Captain WhatsApp Phone" hint="e.g. +91 9876543210 (for sport announcements)">
+            <input className="input" type="tel" placeholder="+91 98765 43210" value={captainPhone} onChange={e => setCaptainPhone(e.target.value)} />
+          </Field>
+          <div className="sm:col-span-2">
+            <ImageField label="Captain photo" round existingPath={team?.captain_photo_path} file={capPhoto} onFile={f => { setCapPhoto(f); if (f) setCapRm(false) }} removed={capRm} onRemove={() => setCapRm(true)} />
+          </div>
         </div>
         <div className="rounded-2xl bg-cream/70 p-4">
           <div className="flex items-center justify-between">
@@ -225,6 +241,21 @@ export default function Teams() {
                 <div className="min-w-0 flex-1">
                   <h2 className="flex items-center gap-2 truncate text-2xl font-semibold"><ColourDot colour={t.colour} />{t.name}</h2>
                   <p className="text-sm text-bark-soft">Captain: <strong>{t.captain_name}</strong> · {t.team_members?.length ?? 0} members</p>
+                  {t.captain_phone && (
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-emerald-800">
+                      <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+                      <span className="font-mono">{t.captain_phone}</span>
+                      <a
+                        href={`https://wa.me/${cleanWhatsAppPhone(t.captain_phone)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-1 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900 hover:bg-emerald-200"
+                        title="Chat on WhatsApp"
+                      >
+                        WhatsApp
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
               <p className="mt-3 line-clamp-3 text-sm text-bark-soft">{(t.team_members ?? []).map(m => m.name).join(', ') || 'No members yet'}</p>

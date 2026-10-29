@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, MessageCircle, Phone, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { getEditions, getSettings, useQuery } from '../../lib/data'
-import type { Edition, EditionStatus, SiteSettings } from '../../types'
+import type { Edition, EditionStatus, SiteSettings, WhatsAppRecipient } from '../../types'
 import { Badge, ConfirmDialog, ErrorBox, Spinner, useToast } from '../../components/ui'
 import { Field, PageTitle, errMsg } from './common'
+import { cleanWhatsAppPhone, getWhatsAppRecipients, saveWhatsAppRecipient, deleteWhatsAppRecipient } from '../../lib/whatsapp'
 
 function EditionCard({ ed, onSaved }: { ed: Edition; onSaved: () => void }) {
   const toast = useToast()
@@ -41,7 +42,12 @@ export default function Settings() {
   const [switchTo, setSwitchTo] = useState<Edition | null>(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState<Partial<SiteSettings>>({})
-  useEffect(() => setForm(st.data), [st.data])
+  useEffect(() => {
+    setForm({
+      ...st.data,
+      whatsapp_sender_phone: st.data.whatsapp_sender_phone || '+91 9019047149',
+    })
+  }, [st.data])
   const current = eds.data.find(e => e.is_current)
 
   async function makeCurrent(name: string | null, existing?: Edition) {
@@ -64,12 +70,70 @@ export default function Settings() {
     const clean = (v?: string | null) => (v?.trim() ? v.trim() : null)
     const { error } = await supabase.from('site_settings').update({
       contact_email: clean(form.contact_email), contact_phone: clean(form.contact_phone), contact_address: clean(form.contact_address),
-      facebook_url: clean(form.facebook_url), instagram_url: clean(form.instagram_url), youtube_url: clean(form.youtube_url), updated_at: new Date().toISOString(),
+      facebook_url: clean(form.facebook_url), instagram_url: clean(form.instagram_url), youtube_url: clean(form.youtube_url),
+      whatsapp_group_url: clean(form.whatsapp_group_url),
+      whatsapp_sender_phone: clean(form.whatsapp_sender_phone) || '+91 9019047149',
+      updated_at: new Date().toISOString(),
     }).eq('id', 1)
     setBusy(false)
     if (error) toast('error', error.message); else { toast('success', 'Contact details saved.'); void st.reload() }
   }
   const f = (k: keyof SiteSettings) => ({ className: 'input', value: form[k] ?? '', onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm(s => ({ ...s, [k]: e.target.value })) })
+
+  /* ---------- WhatsApp Broadcast Recipients state ---------- */
+  const [recipients, setRecipients] = useState<WhatsAppRecipient[]>([])
+  const [loadingRecipients, setLoadingRecipients] = useState(true)
+  const [recipientName, setRecipientName] = useState('')
+  const [recipientPhone, setRecipientPhone] = useState('')
+  const [recipientRole, setRecipientRole] = useState('Sports Coordinator')
+  const [addingRecipient, setAddingRecipient] = useState(false)
+  const [recipientBusy, setRecipientBusy] = useState(false)
+
+  async function loadRecipients() {
+    try {
+      const list = await getWhatsAppRecipients()
+      setRecipients(list)
+    } finally {
+      setLoadingRecipients(false)
+    }
+  }
+
+  useEffect(() => { void loadRecipients() }, [])
+
+  async function addRecipient(e: React.FormEvent) {
+    e.preventDefault()
+    if (!recipientName.trim() || !recipientPhone.trim()) {
+      toast('error', 'Name and phone number are required.')
+      return
+    }
+    setRecipientBusy(true)
+    try {
+      const saved = await saveWhatsAppRecipient({
+        name: recipientName.trim(),
+        phone: recipientPhone.trim(),
+        role: recipientRole.trim() || 'Coordinator',
+      })
+      setRecipients(prev => [...prev, saved])
+      setRecipientName('')
+      setRecipientPhone('')
+      setAddingRecipient(false)
+      toast('success', `Added ${saved.name} to WhatsApp recipients.`)
+    } catch (err) {
+      toast('error', `Could not add recipient: ${errMsg(err)}`)
+    } finally {
+      setRecipientBusy(false)
+    }
+  }
+
+  async function removeRecipient(id: string, name: string) {
+    try {
+      await deleteWhatsAppRecipient(id)
+      setRecipients(prev => prev.filter(r => r.id !== id))
+      toast('success', `Removed ${name} from WhatsApp recipients.`)
+    } catch (err) {
+      toast('error', `Could not delete: ${errMsg(err)}`)
+    }
+  }
 
   if (eds.loading || st.loading) return <Spinner />
   if (eds.error) return <ErrorBox message={eds.error} onRetry={eds.reload} />
@@ -95,12 +159,152 @@ export default function Settings() {
         )}
       </section>
 
+      {/* WhatsApp Broadcast Recipients & Group */}
+      <section className="mb-10">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-2xl font-semibold">
+              <MessageCircle className="h-6 w-6 text-emerald-600" />
+              WhatsApp Notification Numbers
+            </h2>
+            <p className="text-sm text-bark-soft">
+              Numbers configured here, along with Team Captain numbers, receive 1-click WhatsApp announcement links whenever a new sport is added.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-primary btn-sm flex items-center gap-1.5 !bg-emerald-700 !text-white hover:!bg-emerald-800"
+            onClick={() => setAddingRecipient(s => !s)}
+          >
+            <Plus className="h-4 w-4" />
+            {addingRecipient ? 'Cancel' : 'Add Notification Number'}
+          </button>
+        </div>
+
+        {addingRecipient && (
+          <form
+            onSubmit={addRecipient}
+            className="card mb-5 border-2 border-emerald-300 bg-emerald-50/50"
+          >
+            <h3 className="mb-3 text-base font-semibold text-emerald-950">Add WhatsApp Notification Recipient</h3>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Contact name *">
+                <input
+                  className="input"
+                  placeholder="e.g. Sports Warden / Sri Ram"
+                  value={recipientName}
+                  onChange={e => setRecipientName(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="WhatsApp phone number *" hint="e.g. +91 9876543210">
+                <input
+                  className="input"
+                  type="tel"
+                  placeholder="+91 98765 43210"
+                  value={recipientPhone}
+                  onChange={e => setRecipientPhone(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Role or designation">
+                <input
+                  className="input"
+                  placeholder="e.g. Warden / Coordinator / Admin"
+                  value={recipientRole}
+                  onChange={e => setRecipientRole(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="btn-outline btn-sm"
+                onClick={() => setAddingRecipient(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={recipientBusy}
+                className="btn-primary btn-sm !bg-emerald-700 !text-white hover:!bg-emerald-800"
+              >
+                {recipientBusy && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save Number
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="card">
+          {loadingRecipients ? (
+            <Spinner label="Loading notification numbers…" />
+          ) : recipients.length === 0 ? (
+            <div className="py-6 text-center text-sm text-bark-soft">
+              <Phone className="mx-auto mb-2 h-8 w-8 text-sand" />
+              <p className="font-medium">No custom notification numbers added yet.</p>
+              <p className="mt-1 text-xs text-bark-faint">
+                Click &quot;Add Notification Number&quot; above to register coordinators, wardens, or sports secretaries.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-sand">
+              {recipients.map(r => (
+                <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-bark">{r.name}</span>
+                      {r.role && (
+                        <span className="rounded-full bg-sand/60 px-2.5 py-0.5 text-xs text-bark-soft">
+                          {r.role}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 font-mono text-xs text-bark-soft">{r.phone}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`https://wa.me/${cleanWhatsAppPhone(r.phone)}?text=${encodeURIComponent('SRKSH HPL Notification Test')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-outline btn-sm text-xs text-emerald-800 border-emerald-300 hover:bg-emerald-50 flex items-center gap-1"
+                      title="Test WhatsApp connection"
+                    >
+                      <MessageCircle className="h-3 w-3 text-emerald-600" />
+                      Test Link
+                    </a>
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-bark-faint hover:bg-red-50 hover:text-red-700"
+                      onClick={() => void removeRecipient(r.id, r.name)}
+                      aria-label={`Remove ${r.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
       <section>
-        <h2 className="mb-1 text-2xl font-semibold">Footer contact details</h2>
+        <h2 className="mb-1 text-2xl font-semibold">Footer contact & WhatsApp group</h2>
         <p className="mb-4 text-sm text-bark-soft">Optional. Anything left blank is simply not shown on the website.</p>
         <div className="card grid gap-4 sm:grid-cols-2">
           <Field label="Email"><input type="email" {...f('contact_email')} /></Field>
           <Field label="Phone"><input type="tel" {...f('contact_phone')} /></Field>
+          <div className="sm:col-span-2">
+            <Field label="Official HPL WhatsApp Announcements Group / Channel Link" hint="e.g. https://chat.whatsapp.com/... (Used in 1-click broadcast)">
+              <input type="url" placeholder="https://chat.whatsapp.com/..." {...f('whatsapp_group_url')} />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="Default WhatsApp Sender / Coordinator Phone Number" hint="Displayed on announcements for queries (Default: +91 9019047149)">
+              <input type="tel" placeholder="+91 9019047149" {...f('whatsapp_sender_phone')} />
+            </Field>
+          </div>
           <div className="sm:col-span-2"><Field label="Postal address"><textarea rows={3} {...f('contact_address')} /></Field></div>
           <Field label="Facebook URL"><input type="url" placeholder="https://" {...f('facebook_url')} /></Field>
           <Field label="Instagram URL"><input type="url" placeholder="https://" {...f('instagram_url')} /></Field>

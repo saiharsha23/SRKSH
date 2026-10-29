@@ -6,6 +6,7 @@ export interface Member { id: string; team_id: string; name: string; photo_path:
 export interface Team {
   id: string; edition_id: string; name: string; colour: string | null; description: string | null
   logo_path: string | null; captain_name: string; captain_photo_path: string | null
+  captain_phone?: string | null
   team_members?: Member[]
 }
 export interface Sport {
@@ -27,6 +28,16 @@ export interface AboutImage { slot: number; title: string | null; caption: strin
 export interface SiteSettings {
   contact_email: string | null; contact_phone: string | null; contact_address: string | null
   facebook_url: string | null; instagram_url: string | null; youtube_url: string | null
+  whatsapp_group_url?: string | null
+  whatsapp_sender_phone?: string | null
 }
 export interface TeamCredential { team_id: string; pin: string; updated_at?: string }
 export interface LeaderSession { teamId: string; teamName: string; captainName: string; pin: string }
+
+export interface WhatsAppRecipient {
+  id: string
+  name: string
+  phone: string
+  role?: string | null
+  created_at?: string
+}

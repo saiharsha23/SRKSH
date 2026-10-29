@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Calendar, Check, Clock, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Calendar, Check, Clock, Loader2, MessageCircle, Pencil, Plus, Share2, Trash2 } from 'lucide-react'
 import { supabase, uploadImage, removeImage, imageUrl } from '../../lib/supabase'
-import { useHpl, type SportBundle } from '../../lib/data'
-import type { Sport, SportStatus, Team } from '../../types'
+import { useHpl, getSettings, type SportBundle } from '../../lib/data'
+import type { Sport, SportStatus, Team, SiteSettings } from '../../types'
 import { Badge, ConfirmDialog, EmptyState, ErrorBox, Img, Modal, Spinner, useToast, ColourDot } from '../../components/ui'
 import { Field, ImageField, PageTitle, errMsg } from './common'
 import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal, toLocalIso } from '../../lib/format'
+import WhatsAppBroadcastModal from '../../components/WhatsAppBroadcastModal'
 
 /* ---------- Sport create / edit form ---------- */
-function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null; editionId: string; onClose: () => void; onSaved: (id: string) => void }) {
+function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null; editionId: string; onClose: () => void; onSaved: (id: string, isNew: boolean, sportData: Sport) => void }) {
   const toast = useToast()
 
   const [name, setName] = useState(sport?.name ?? '')
@@ -58,11 +59,20 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
         updated_at: new Date().toISOString(),
       }
       let id = sport?.id
-      if (id) { const { error } = await supabase.from('sports').update(payload).eq('id', id); if (error) throw error }
-      else { const { data, error } = await supabase.from('sports').insert({ ...payload, edition_id: editionId }).select('id').single(); if (error) throw error; id = data.id }
+      let savedSport: Sport | null = null
+      if (id) {
+        const { data: updated, error } = await supabase.from('sports').update(payload).eq('id', id).select('*').single()
+        if (error) throw error
+        savedSport = updated as Sport
+      } else {
+        const { data: created, error } = await supabase.from('sports').insert({ ...payload, edition_id: editionId }).select('*').single()
+        if (error) throw error
+        id = created.id
+        savedSport = created as Sport
+      }
       if (old && old !== image_path) await removeImage(old)
       toast('success', sport ? 'Sport updated.' : 'Sport created.')
-      onSaved(id!)
+      onSaved(id!, !sport, savedSport!)
     } catch (e) { if (uploaded) await removeImage(uploaded); toast('error', `Could not save: ${errMsg(e)}`) } finally { setBusy(false) }
   }
   return (
@@ -124,7 +134,14 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
 export default function Sports() {
   const { data, loading, error, reload } = useHpl()
   const [adding, setAdding] = useState(false)
+  const [broadcastSport, setBroadcastSport] = useState<Sport | null>(null)
+  const [settings, setSettings] = useState<Partial<SiteSettings>>({})
   const nav = useNavigate()
+
+  useEffect(() => {
+    void getSettings().then(setSettings)
+  }, [])
+
   if (loading) return <Spinner />
   if (error) return <ErrorBox message={error} onRetry={reload} />
   if (!data.edition) return <EmptyState title="No HPL edition yet" text="Create an edition in Settings first." />
@@ -137,33 +154,83 @@ export default function Sports() {
           {bundle.sports.map(s => {
             const res = bundle.results.find(r => r.sport_id === s.id)
             return (
-              <Link key={s.id} to={`/admin/sports/${s.id}`} className="card block transition hover:-translate-y-1">
-                <div className="flex items-center gap-3">
-                  <Img src={imageUrl(s.image_path)} alt="" className="h-12 w-12 rounded-xl object-cover" />
-                  <div className="min-w-0 flex-1"><h2 className="truncate text-2xl font-semibold">{s.name}</h2><p className="text-xs text-bark-soft">{s.category || 'Sport'}</p></div>
-                  <Badge status={s.status} />
+              <div key={s.id} className="card relative block transition hover:-translate-y-1">
+                <Link to={`/admin/sports/${s.id}`} className="block">
+                  <div className="flex items-center gap-3">
+                    <Img src={imageUrl(s.image_path)} alt="" className="h-12 w-12 rounded-xl object-cover" />
+                    <div className="min-w-0 flex-1"><h2 className="truncate text-2xl font-semibold">{s.name}</h2><p className="text-xs text-bark-soft">{s.category || 'Sport'}</p></div>
+                    <Badge status={s.status} />
+                  </div>
+                  <p className="mt-4 text-sm text-bark-soft">{bundle.sportTeams.filter(t => t.sport_id === s.id).length} team(s) · {bundle.participants.filter(p => p.sport_id === s.id).length} player(s) · Result: {res?.status === 'completed' ? 'Completed' : 'Pending'}</p>
+                  {s.registration_deadline ? (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs">
+                      <Clock className={`h-3.5 w-3.5 shrink-0 ${isDeadlinePassed(s.registration_deadline) ? 'text-red-600' : 'text-terracotta'}`} />
+                      <span className={isDeadlinePassed(s.registration_deadline) ? 'font-semibold text-red-700' : 'font-medium text-bark-soft'}>
+                        {isDeadlinePassed(s.registration_deadline) ? 'Closed: ' : 'Deadline: '}
+                        {fmtDateTime(s.registration_deadline)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-bark-faint">
+                      <Clock className="h-3.5 w-3.5 text-sand" />
+                      <span>No deadline set (Open)</span>
+                    </div>
+                  )}
+                </Link>
+
+                <div className="mt-3 flex items-center justify-between border-t border-sand/60 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setBroadcastSport(s)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200 transition hover:bg-emerald-100"
+                    title="Send WhatsApp announcement to captains & coordinators"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+                    Broadcast on WhatsApp
+                  </button>
+                  <Link
+                    to={`/admin/sports/${s.id}`}
+                    className="text-xs text-terracotta hover:underline font-medium"
+                  >
+                    Manage →
+                  </Link>
                 </div>
-                <p className="mt-4 text-sm text-bark-soft">{bundle.sportTeams.filter(t => t.sport_id === s.id).length} team(s) · {bundle.participants.filter(p => p.sport_id === s.id).length} player(s) · Result: {res?.status === 'completed' ? 'Completed' : 'Pending'}</p>
-                {s.registration_deadline ? (
-                  <div className="mt-2 flex items-center gap-1.5 text-xs">
-                    <Clock className={`h-3.5 w-3.5 shrink-0 ${isDeadlinePassed(s.registration_deadline) ? 'text-red-600' : 'text-terracotta'}`} />
-                    <span className={isDeadlinePassed(s.registration_deadline) ? 'font-semibold text-red-700' : 'font-medium text-bark-soft'}>
-                      {isDeadlinePassed(s.registration_deadline) ? 'Closed: ' : 'Deadline: '}
-                      {fmtDateTime(s.registration_deadline)}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-2 flex items-center gap-1.5 text-xs text-bark-faint">
-                    <Clock className="h-3.5 w-3.5 text-sand" />
-                    <span>No deadline set (Open)</span>
-                  </div>
-                )}
-              </Link>
+              </div>
             )
           })}
         </div>
       )}
-      {adding && <SportForm sport={null} editionId={data.edition.id} onClose={() => setAdding(false)} onSaved={id => nav(`/admin/sports/${id}`)} />}
+      {adding && (
+        <SportForm
+          sport={null}
+          editionId={data.edition.id}
+          onClose={() => setAdding(false)}
+          onSaved={(id, isNew, newSport) => {
+            setAdding(false)
+            void reload()
+            if (isNew) {
+              setBroadcastSport(newSport)
+            } else {
+              nav(`/admin/sports/${id}`)
+            }
+          }}
+        />
+      )}
+      {broadcastSport && (
+        <WhatsAppBroadcastModal
+          sport={broadcastSport}
+          teams={data.teams}
+          siteSettings={settings}
+          onClose={() => {
+            const id = broadcastSport.id
+            setBroadcastSport(null)
+            nav(`/admin/sports/${id}`)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -515,9 +582,15 @@ export function SportDetail() {
   const [editing, setEditing] = useState(false)
   const [deadlineModal, setDeadlineModal] = useState(false)
   const [delOpen, setDelOpen] = useState(false)
+  const [broadcastOpen, setBroadcastOpen] = useState(false)
+  const [settings, setSettings] = useState<Partial<SiteSettings>>({})
   const [busy, setBusy] = useState(false)
   const [busyDeadline, setBusyDeadline] = useState(false)
   const [addTeam, setAddTeam] = useState('')
+
+  useEffect(() => {
+    void getSettings().then(setSettings)
+  }, [])
   const sport = data.bundle.sports.find(s => s.id === id)
   const { teams, bundle } = data
   const sportTeams = useMemo(() => teams.filter(t => bundle.sportTeams.some(st => st.sport_id === id && st.team_id === t.id)), [teams, bundle, id])
@@ -602,6 +675,15 @@ export function SportDetail() {
       <Link to="/admin/sports" className="mb-4 inline-flex items-center gap-1 text-sm text-terracotta-deep hover:underline"><ArrowLeft className="h-4 w-4" />All sports</Link>
       <PageTitle title={sport.name} text={sport.category || undefined} action={
         <div className="flex items-center gap-2"><Badge status={sport.status} />
+          <button
+            type="button"
+            className="btn-outline btn-sm flex items-center gap-1.5 border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+            onClick={() => setBroadcastOpen(true)}
+            title="Broadcast announcement to team captains & WhatsApp numbers"
+          >
+            <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+            WhatsApp Broadcast
+          </button>
           <button className="btn-outline btn-sm" onClick={() => setEditing(true)}><Pencil className="h-3 w-3" />Edit</button>
           <button className="btn-sm inline-flex items-center gap-1 rounded-full px-4 py-2 text-xs font-medium text-red-700 hover:bg-red-50" onClick={() => setDelOpen(true)}><Trash2 className="h-3 w-3" />Delete</button></div>} />
 
@@ -741,6 +823,14 @@ export function SportDetail() {
 
       {editing && data.edition && <SportForm sport={sport} editionId={data.edition.id} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload() }} />}
       {deadlineModal && <DeadlineModal sport={sport} onClose={() => setDeadlineModal(false)} onSaved={() => { setDeadlineModal(false); void reload() }} />}
+      {broadcastOpen && (
+        <WhatsAppBroadcastModal
+          sport={sport}
+          teams={teams}
+          siteSettings={settings}
+          onClose={() => setBroadcastOpen(false)}
+        />
+      )}
       <ConfirmDialog open={delOpen} busy={busy} title={`Delete ${sport.name}?`} message={result?.status === 'completed' ? 'This sport has a completed result. Deleting it removes the result and the leaderboard will be recalculated without its points.' : 'This deletes the sport, its participants and any pending result.'} onCancel={() => setDelOpen(false)} onConfirm={() => void deleteSport()} />
     </>
   )
