@@ -1103,7 +1103,8 @@ export default function LeaderPortal() {
                         return (
                           <div
                             key={m.id}
-                            className={`rounded-2xl border p-4 shadow-soft transition ${
+                            onClick={() => (sport?.name?.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') ? setLiveScorecardMatch(m) : undefined}
+                            className={`rounded-2xl border p-4 shadow-soft transition ${(sport?.name?.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') ? 'cursor-pointer hover:shadow-md hover:border-saffron/70' : ''} ${
                               m.status === 'live'
                                 ? 'border-red-400 bg-red-50/50 ring-1 ring-red-400'
                                 : m.status === 'completed'

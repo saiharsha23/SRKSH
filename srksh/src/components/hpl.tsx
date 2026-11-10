@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, Calendar, ChevronDown, Clock, Crown, MapPin, Medal, TrendingUp, Trophy, Users } from 'lucide-react'
+import { Activity, Calendar, ChevronDown, Clock, Crown, MapPin, Medal, TrendingUp, Trophy, Users, RotateCw } from 'lucide-react'
 import type { LeaderRow, Participant, Placement, Sport, SportResult, SportTeam, Team, SportMatch } from '../types'
 import type { SportBundle } from '../lib/data'
 import { imageUrl } from '../lib/supabase'
@@ -163,16 +163,28 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
           </div>
         )}
 
-        {isCricket && (
+        <div className="flex items-center gap-2 ml-auto">
+          {isCricket && (
+            <button
+              type="button"
+              className="btn-outline btn-sm py-1 px-3 text-xs font-semibold flex items-center gap-1.5 border-amber-500 bg-amber-50 text-amber-950 hover:bg-amber-100"
+              onClick={() => setStatsOpen(true)}
+            >
+              <TrendingUp className="h-3.5 w-3.5 text-amber-700" />
+              📊 Stats & Caps (NRR)
+            </button>
+          )}
+
           <button
             type="button"
-            className="btn-outline btn-sm py-1 px-3 text-xs font-semibold flex items-center gap-1.5 border-amber-500 bg-amber-50 text-amber-950 hover:bg-amber-100 ml-auto"
-            onClick={() => setStatsOpen(true)}
+            className="btn-outline btn-sm py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-bark hover:bg-sand/60"
+            onClick={() => window.location.reload()}
+            title="Refresh latest match fixtures and scores"
           >
-            <TrendingUp className="h-3.5 w-3.5 text-amber-700" />
-            📊 Stats & Caps (NRR)
+            <RotateCw className="h-3 w-3" />
+            <span>Refresh</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* MATCHES VIEW */}
@@ -186,7 +198,10 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
             return (
               <div
                 key={m.id}
-                className={`rounded-2xl border p-3.5 transition ${
+                onClick={() => isCricket ? setViewingScorecardMatch(m) : undefined}
+                className={`rounded-2xl border p-4 transition group ${
+                  isCricket ? 'cursor-pointer hover:shadow-md hover:border-saffron/70 hover:bg-cream/60' : ''
+                } ${
                   m.status === 'live'
                     ? 'border-red-400 bg-red-50/50 ring-1 ring-red-400'
                     : m.status === 'completed'
@@ -195,8 +210,13 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
                 }`}
               >
                 <div className="flex items-center justify-between text-[11px] text-bark-soft pb-2 border-b border-sand/40">
-                  <span className="font-semibold text-bark">
+                  <span className="font-semibold text-bark flex items-center gap-2">
                     Match #{m.match_number} · {m.round_name}
+                    {isCricket && (
+                      <span className="rounded-full bg-saffron-soft/70 px-2 py-0.5 text-[9px] font-bold text-bark group-hover:bg-saffron group-hover:text-ivory transition">
+                        📊 Scorecard ↗
+                      </span>
+                    )}
                   </span>
                   <div>
                     {m.status === 'live' && (
@@ -292,19 +312,23 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
                         )}
                       </div>
                     )}
+                  </div>
+                )}
 
-                    {(sport.name.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') && (
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          className="btn-outline btn-sm w-full py-1 text-xs font-semibold flex items-center justify-center gap-1.5 border-saffron bg-saffron-soft/20 text-bark hover:bg-saffron-soft"
-                          onClick={() => setViewingScorecardMatch(m)}
-                        >
-                          <Activity className="h-3.5 w-3.5 text-saffron-deep" />
-                          View Live Scorecard & Commentary
-                        </button>
-                      </div>
-                    )}
+                {/* Scorecard CTA */}
+                {isCricket && (
+                  <div className="mt-3 pt-2.5 border-t border-sand/40">
+                    <button
+                      type="button"
+                      className="btn-outline btn-sm w-full py-1.5 text-xs font-semibold flex items-center justify-center gap-1.5 border-saffron bg-saffron-soft/30 text-bark hover:bg-saffron hover:text-ivory transition shadow-xs"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setViewingScorecardMatch(m)
+                      }}
+                    >
+                      <Activity className="h-3.5 w-3.5 text-saffron-deep group-hover:text-ivory" />
+                      <span>{m.status === 'live' ? '🔴 View Live Scorecard (Batters & Bowler) →' : '📊 View Scorecard, Batters & Bowler Stats →'}</span>
+                    </button>
                   </div>
                 )}
               </div>

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Shield,
   Volume2,
+  RotateCw,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Team, SportMatch, CricketMatch, CricketDelivery } from '../types'
@@ -37,6 +38,9 @@ export default function CricketLiveScorecard({
   const teamB = teams.find(t => t.id === match.team_b_id)
 
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<string>('')
+  const [liveMatch, setLiveMatch] = useState<SportMatch>(match)
   const [cricketMatch, setCricketMatch] = useState<CricketMatch | null>(null)
   const [deliveries, setDeliveries] = useState<CricketDelivery[]>([])
   const [activeTab, setActiveTab] = useState<'live' | 'inngs1' | 'inngs2' | 'charts' | 'info'>('live')
@@ -44,6 +48,17 @@ export default function CricketLiveScorecard({
   // Load cricket data
   const loadData = useCallback(async () => {
     try {
+      // 1. Fetch latest sport_match to catch status changes
+      const { data: sm } = await supabase
+        .from('sport_matches')
+        .select('*')
+        .eq('id', match.id)
+        .maybeSingle()
+      if (sm) {
+        setLiveMatch(sm as SportMatch)
+      }
+
+      // 2. Fetch cricket_match
       const { data: cm, error: cmErr } = await supabase
         .from('cricket_matches')
         .select('*')
@@ -53,6 +68,7 @@ export default function CricketLiveScorecard({
       if (cmErr) throw cmErr
       setCricketMatch(cm as CricketMatch | null)
 
+      // 3. Fetch deliveries
       if (cm) {
         const { data: delData, error: delErr } = await supabase
           .from('cricket_deliveries')
@@ -62,13 +78,23 @@ export default function CricketLiveScorecard({
 
         if (delErr) throw delErr
         setDeliveries((delData ?? []) as CricketDelivery[])
+      } else {
+        setDeliveries([])
       }
+
+      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     } catch {
       // ignore
     } finally {
       setLoading(false)
     }
   }, [match.id])
+
+  const handleManualRefresh = async () => {
+    setRefreshing(true)
+    await loadData()
+    setTimeout(() => setRefreshing(false), 400)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -151,11 +177,75 @@ export default function CricketLiveScorecard({
           <p className="mt-2 text-sm text-bark-soft">Loading live cricket scorecard...</p>
         </div>
       ) : !cricketMatch ? (
-        <div className="p-8 text-center text-bark-soft">
-          <p className="text-base font-semibold">Ball-by-ball scoring has not started yet.</p>
-          <p className="text-xs text-bark-faint mt-1">
-            Check back when the match begins for live commentary and full scorecards.
-          </p>
+        <div className="space-y-5 p-2">
+          {/* Match preview hero */}
+          <div className="rounded-3xl bg-gradient-to-br from-bark to-bark-deep p-6 text-ivory text-center space-y-3 shadow-md">
+            <div className="flex items-center justify-center gap-2">
+              <span className="rounded-full bg-sand/30 px-3 py-1 text-xs font-semibold text-ivory">
+                {liveMatch.round_name} · Match #{liveMatch.match_number}
+              </span>
+              <span className="rounded-full bg-sand/20 px-2.5 py-1 text-xs text-sand">
+                {liveMatch.status === 'live' ? '🔴 Live' : liveMatch.status === 'completed' ? 'Final' : '⏳ Scheduled'}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-4 py-2 font-serif text-2xl font-bold">
+              <div className="flex items-center gap-2">
+                <ColourDot colour={teamA?.colour} />
+                <span>{teamA?.name ?? 'Team A'}</span>
+              </div>
+              <span className="text-sand/50 text-base font-normal">vs</span>
+              <div className="flex items-center gap-2">
+                <ColourDot colour={teamB?.colour} />
+                <span>{teamB?.name ?? 'Team B'}</span>
+              </div>
+            </div>
+
+            {(liveMatch.scheduled_date || liveMatch.scheduled_time || liveMatch.venue) && (
+              <p className="text-xs text-sand/80">
+                {liveMatch.venue || 'Main Ground'} {liveMatch.scheduled_date && `· ${liveMatch.scheduled_date}`} {liveMatch.scheduled_time && `at ${liveMatch.scheduled_time}`}
+              </p>
+            )}
+
+            {/* Quick score summary if exists */}
+            {(liveMatch.score_data?.team_a_cricket || liveMatch.score_data?.team_b_cricket) && (
+              <div className="mt-3 rounded-2xl bg-white/10 p-3 text-xs max-w-sm mx-auto flex justify-around">
+                <div>
+                  <span className="text-sand/70 block">{teamA?.name}</span>
+                  <span className="font-serif text-lg font-bold">
+                    {liveMatch.score_data.team_a_cricket?.runs ?? 0}/{liveMatch.score_data.team_a_cricket?.wickets ?? 0}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-sand/70 block">{teamB?.name}</span>
+                  <span className="font-serif text-lg font-bold">
+                    {liveMatch.score_data.team_b_cricket?.runs ?? 0}/{liveMatch.score_data.team_b_cricket?.wickets ?? 0}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-sand bg-cream/40 p-6 text-center space-y-3">
+            <p className="text-sm font-semibold text-bark">
+              Live scoring, ball-by-ball commentary, batter and bowler stats will update here automatically as soon as the scorer starts the match!
+            </p>
+            <p className="text-xs text-bark-soft">
+              Click the button below to check and refresh for updated scores:
+            </p>
+            <button
+              type="button"
+              disabled={refreshing}
+              className="btn-primary inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold shadow-soft"
+              onClick={() => void handleManualRefresh()}
+            >
+              <RotateCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              <span>{refreshing ? 'Checking for updates...' : '🔄 Refresh to Get Updated Scores'}</span>
+            </button>
+            {lastUpdated && (
+              <p className="text-[11px] text-bark-faint">Last checked: {lastUpdated}</p>
+            )}
+          </div>
         </div>
       ) : (
         <div className="space-y-5">
@@ -164,12 +254,12 @@ export default function CricketLiveScorecard({
             {/* Top row status */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bark-soft/40 pb-3">
               <div className="flex items-center gap-2">
-                {match.status === 'live' ? (
+                {liveMatch.status === 'live' ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white animate-pulse">
                     <span className="h-2 w-2 rounded-full bg-white" />
                     LIVE · INNINGS {cricketMatch.current_innings}
                   </span>
-                ) : match.status === 'completed' ? (
+                ) : liveMatch.status === 'completed' ? (
                   <span className="rounded-full bg-emerald-700 px-3 py-1 text-xs font-bold uppercase text-white">
                     Match Completed
                   </span>
@@ -183,11 +273,28 @@ export default function CricketLiveScorecard({
                 </span>
               </div>
 
-              {cricketMatch.toss_winner_team_id && (
-                <span className="text-xs text-sand">
-                  🪙 {(cricketMatch.toss_winner_team_id === teamA?.id ? teamA?.name : teamB?.name) ?? 'Toss winner'} chose to {cricketMatch.toss_decision}
-                </span>
-              )}
+              <div className="flex items-center gap-2 ml-auto">
+                {cricketMatch.toss_winner_team_id && (
+                  <span className="text-xs text-sand hidden md:inline">
+                    🪙 {(cricketMatch.toss_winner_team_id === teamA?.id ? teamA?.name : teamB?.name) ?? 'Toss winner'} chose to {cricketMatch.toss_decision}
+                  </span>
+                )}
+
+                {/* REFRESH SCORES BUTTON */}
+                <button
+                  type="button"
+                  disabled={refreshing}
+                  onClick={() => void handleManualRefresh()}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-sand/40 bg-white/15 px-3 py-1 text-xs font-bold text-ivory hover:bg-white/25 active:scale-95 transition shadow-xs cursor-pointer"
+                  title="Click to fetch latest scores immediately"
+                >
+                  <RotateCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-saffron' : ''}`} />
+                  <span>{refreshing ? 'Refreshing...' : '🔄 Refresh Scores'}</span>
+                  {lastUpdated && (
+                    <span className="text-[10px] text-sand/80 font-normal">({lastUpdated})</span>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Big Score Display */}
