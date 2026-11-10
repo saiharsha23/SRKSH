@@ -12,6 +12,8 @@ import {
   formatMatchScoreDisplay,
 } from '../lib/tournament'
 import MatchScorerModal from './MatchScorerModal'
+import CricketScorerConsole from './CricketScorerConsole'
+import CricketLiveScorecard from './CricketLiveScorecard'
 
 interface MatchScheduleManagerProps {
   sport: Sport
@@ -47,6 +49,8 @@ export default function MatchScheduleManager({
   const [deleteConfirmMatch, setDeleteConfirmMatch] = useState<SportMatch | null>(null)
   const [clearAllConfirm, setClearAllConfirm] = useState(false)
   const [syncPlacementsConfirm, setSyncPlacementsConfirm] = useState(false)
+  const [cricketConsoleMatch, setCricketConsoleMatch] = useState<SportMatch | null>(null)
+  const [cricketScorecardMatch, setCricketScorecardMatch] = useState<SportMatch | null>(null)
   const [busy, setBusy] = useState(false)
 
   // Quick add match modal state
@@ -521,7 +525,27 @@ export default function MatchScheduleManager({
                         </div>
 
                         {/* Edit & Delete */}
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {(sport.name.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-outline btn-sm py-1 px-2.5 text-xs font-semibold flex items-center gap-1 border-saffron bg-saffron-soft/40 text-bark hover:bg-saffron-soft"
+                                onClick={() => setCricketConsoleMatch(m)}
+                              >
+                                🏏 Scorer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-outline btn-sm py-1 px-2 text-xs flex items-center gap-1"
+                                onClick={() => setCricketScorecardMatch(m)}
+                                title="View Full Live Scorecard"
+                              >
+                                📊 Card
+                              </button>
+                            </>
+                          )}
+
                           <button
                             type="button"
                             className="btn-outline btn-sm py-1 px-2.5 text-xs flex items-center gap-1"
@@ -748,6 +772,27 @@ export default function MatchScheduleManager({
         onCancel={() => setDeleteConfirmMatch(null)}
         onConfirm={() => void handleDeleteMatch()}
       />
+
+      {/* Cricket Ball-by-Ball Scorer Console */}
+      {cricketConsoleMatch && (
+        <CricketScorerConsole
+          open={!!cricketConsoleMatch}
+          onClose={() => setCricketConsoleMatch(null)}
+          match={cricketConsoleMatch}
+          teams={teams}
+          onChanged={onChanged}
+        />
+      )}
+
+      {/* Cricket Live Scorecard */}
+      {cricketScorecardMatch && (
+        <CricketLiveScorecard
+          open={!!cricketScorecardMatch}
+          onClose={() => setCricketScorecardMatch(null)}
+          match={cricketScorecardMatch}
+          teams={teams}
+        />
+      )}
 
       {/* Clear All Confirm */}
       <ConfirmDialog

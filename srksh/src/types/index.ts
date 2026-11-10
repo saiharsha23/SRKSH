@@ -65,6 +65,85 @@ export interface SportMatch {
   created_at?: string
   updated_at?: string
 }
+
+export type CricketMatchStatus = 'not_started' | 'innings1' | 'break' | 'innings2' | 'completed'
+export type CricketWicketType = 'bowled' | 'caught' | 'run_out' | 'stumped' | 'lbw' | 'hit_wicket'
+export type CricketExtraType = 'wide' | 'no_ball' | 'bye' | 'leg_bye' | 'penalty'
+
+export interface CricketMatch {
+  id: string
+  match_id: string
+  overs_limit: number
+  toss_winner_team_id: string | null
+  toss_decision: 'bat' | 'field' | null
+  current_innings: 1 | 2
+  batting_first_team_id: string | null
+  striker_name: string | null
+  non_striker_name: string | null
+  bowler_name: string | null
+  status: CricketMatchStatus
+  target_runs: number | null
+  innings1_runs: number
+  innings1_wickets: number
+  innings1_legal_balls: number
+  innings2_runs: number
+  innings2_wickets: number
+  innings2_legal_balls: number
+  winner_team_id: string | null
+  result_summary: string | null
+  player_of_match: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CricketDelivery {
+  id: string
+  cricket_match_id: string
+  innings: 1 | 2
+  over_number: number
+  ball_in_over: number
+  striker_name: string
+  non_striker_name: string
+  bowler_name: string
+  runs_batter: number
+  is_extra: boolean
+  extra_type: CricketExtraType | null
+  extra_runs: number
+  is_wicket: boolean
+  wicket_type: CricketWicketType | null
+  player_dismissed: string | null
+  fielder_name: string | null
+  commentary: string | null
+  created_at?: string
+}
+
+export interface BattingStats {
+  name: string
+  runs: number
+  balls: number
+  fours: number
+  sixes: number
+  strikeRate: number
+  dismissal: string
+  isNotOut: boolean
+}
+
+export interface BowlingStats {
+  name: string
+  overs: string
+  maidens: number
+  runs: number
+  wickets: number
+  economy: number
+  dots: number
+}
+
+export interface FallOfWicket {
+  score: number
+  wickets: number
+  player: string
+  overs: string
+}
 export interface LeaderRow {
   team_id: string; edition_id: string; team_name: string; colour: string | null; logo_path: string | null
   captain_name: string; captain_photo_path: string | null

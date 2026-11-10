@@ -175,6 +175,56 @@ create table if not exists public.sport_matches (
 create index if not exists idx_sport_matches_sport_id on public.sport_matches(sport_id);
 create index if not exists idx_sport_matches_teams on public.sport_matches(team_a_id, team_b_id);
 
+create table if not exists public.cricket_matches (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references public.sport_matches(id) on delete cascade unique,
+  overs_limit int not null default 15,
+  toss_winner_team_id uuid references public.teams(id) on delete set null,
+  toss_decision text check (toss_decision in ('bat', 'field') or toss_decision is null),
+  current_innings int not null default 1 check (current_innings in (1, 2)),
+  batting_first_team_id uuid references public.teams(id) on delete set null,
+  striker_name text,
+  non_striker_name text,
+  bowler_name text,
+  status text not null default 'innings1' check (status in ('not_started', 'innings1', 'break', 'innings2', 'completed')),
+  target_runs int,
+  innings1_runs int not null default 0,
+  innings1_wickets int not null default 0,
+  innings1_legal_balls int not null default 0,
+  innings2_runs int not null default 0,
+  innings2_wickets int not null default 0,
+  innings2_legal_balls int not null default 0,
+  winner_team_id uuid references public.teams(id) on delete set null,
+  result_summary text,
+  player_of_match text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public.cricket_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  cricket_match_id uuid not null references public.cricket_matches(id) on delete cascade,
+  innings int not null default 1 check (innings in (1, 2)),
+  over_number int not null default 0,
+  ball_in_over int not null default 0,
+  striker_name text not null,
+  non_striker_name text not null,
+  bowler_name text not null,
+  runs_batter int not null default 0,
+  is_extra boolean not null default false,
+  extra_type text check (extra_type in ('wide', 'no_ball', 'bye', 'leg_bye', 'penalty') or extra_type is null),
+  extra_runs int not null default 0,
+  is_wicket boolean not null default false,
+  wicket_type text check (wicket_type in ('bowled', 'caught', 'run_out', 'stumped', 'lbw', 'hit_wicket') or wicket_type is null),
+  player_dismissed text,
+  fielder_name text,
+  commentary text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_cricket_matches_match_id on public.cricket_matches(match_id);
+create index if not exists idx_cricket_deliveries_match on public.cricket_deliveries(cricket_match_id, innings, over_number);
+
 -- A placed team must be a participant of that sport
 create or replace function public.check_placement_participant()
 returns trigger language plpgsql as $$
@@ -287,7 +337,8 @@ declare t text;
 begin
   foreach t in array array[
     'site_settings','about_images','gallery_images','hpl_editions','teams','team_members',
-    'sports','sport_teams','sport_participants','sport_results','result_placements','sport_matches'
+    'sports','sport_teams','sport_participants','sport_results','result_placements','sport_matches',
+    'cricket_matches','cricket_deliveries'
   ] loop
     execute format('drop policy if exists "public read" on public.%I', t);
     execute format('create policy "public read" on public.%I for select using (true)', t);

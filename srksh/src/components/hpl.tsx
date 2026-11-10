@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Calendar, ChevronDown, Clock, Crown, MapPin, Medal, Trophy, Users } from 'lucide-react'
-import type { LeaderRow, Participant, Placement, Sport, SportResult, SportTeam, Team } from '../types'
+import { Activity, Calendar, ChevronDown, Clock, Crown, MapPin, Medal, Trophy, Users } from 'lucide-react'
+import type { LeaderRow, Participant, Placement, Sport, SportResult, SportTeam, Team, SportMatch } from '../types'
 import type { SportBundle } from '../lib/data'
 import { imageUrl } from '../lib/supabase'
 import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal } from '../lib/format'
 import { Badge, ColourDot, EmptyState, Img } from './ui'
 import { formatMatchScoreDisplay } from '../lib/tournament'
+import CricketLiveScorecard from './CricketLiveScorecard'
 
 export function TeamCard({ team, row }: { team: Team; row?: LeaderRow }) {
   const [open, setOpen] = useState(false)
@@ -77,6 +78,7 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
   const [tab, setTab] = useState<'matches' | 'result'>(
     sportMatches.length > 0 && !done ? 'matches' : 'result'
   )
+  const [viewingScorecardMatch, setViewingScorecardMatch] = useState<SportMatch | null>(null)
 
   return (
     <article className={`overflow-hidden rounded-3xl p-6 shadow-soft ring-1 transition ${done ? 'bg-gradient-to-br from-saffron-soft/50 to-white ring-saffron/50' : 'bg-white/70 ring-sand'}`}>
@@ -274,6 +276,19 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
                         )}
                       </div>
                     )}
+
+                    {(sport.name.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          className="btn-outline btn-sm w-full py-1 text-xs font-semibold flex items-center justify-center gap-1.5 border-saffron bg-saffron-soft/20 text-bark hover:bg-saffron-soft"
+                          onClick={() => setViewingScorecardMatch(m)}
+                        >
+                          <Activity className="h-3.5 w-3.5 text-saffron-deep" />
+                          View Live Scorecard & Commentary
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -334,6 +349,15 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
             })}
           </div>
         ) : <p className="mt-3 text-sm text-bark-soft">Participants have not been announced yet.</p>
+      )}
+
+      {viewingScorecardMatch && (
+        <CricketLiveScorecard
+          open={!!viewingScorecardMatch}
+          onClose={() => setViewingScorecardMatch(null)}
+          match={viewingScorecardMatch}
+          teams={teams}
+        />
       )}
     </article>
   )

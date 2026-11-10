@@ -26,7 +26,8 @@ import { useHpl } from '../../lib/data'
 import { useLeaderAuth } from '../../lib/leaderAuth'
 import { formatMatchScoreDisplay } from '../../lib/tournament'
 import { imageUrl } from '../../lib/supabase'
-import type { Sport, Team, Member } from '../../types'
+import type { Sport, Team, Member, SportMatch } from '../../types'
+import CricketLiveScorecard from '../../components/CricketLiveScorecard'
 import {
   Badge,
   ColourDot,
@@ -425,6 +426,7 @@ export default function LeaderPortal() {
   const [unregisterConfirm, setUnregisterConfirm] = useState<Sport | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [sportFilter, setSportFilter] = useState<'all' | 'registered' | 'upcoming'>('all')
+  const [liveScorecardMatch, setLiveScorecardMatch] = useState<SportMatch | null>(null)
 
   useTitle(session ? `${session.teamName} · Team Leader Portal` : 'Team Leader Portal')
 
@@ -1154,6 +1156,18 @@ export default function LeaderPortal() {
                                 )}
                               </div>
                             )}
+
+                            {(sport?.name?.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') && (
+                              <div className="pt-2">
+                                <button
+                                  type="button"
+                                  className="btn-outline btn-sm w-full py-1 text-xs font-semibold flex items-center justify-center gap-1.5 border-saffron bg-saffron-soft/20 text-bark hover:bg-saffron-soft"
+                                  onClick={() => setLiveScorecardMatch(m)}
+                                >
+                                  📊 View Live Scorecard & Commentary
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -1235,6 +1249,16 @@ export default function LeaderPortal() {
         onCancel={() => setUnregisterConfirm(null)}
         onConfirm={() => unregisterConfirm && void handleToggleRegister(unregisterConfirm, false)}
       />
+
+      {/* Live Cricket Scorecard Modal */}
+      {liveScorecardMatch && (
+        <CricketLiveScorecard
+          open={!!liveScorecardMatch}
+          onClose={() => setLiveScorecardMatch(null)}
+          match={liveScorecardMatch}
+          teams={data.teams}
+        />
+      )}
     </div>
   )
 }

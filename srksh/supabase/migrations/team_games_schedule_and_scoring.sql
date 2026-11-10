@@ -53,3 +53,4 @@ grant select on public.sport_matches to anon, authenticated;
 grant all on public.sport_matches to authenticated;
 
 notify pgrst, 'reload schema';
+
