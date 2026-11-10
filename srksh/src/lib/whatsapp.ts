@@ -213,9 +213,10 @@ export async function deleteWhatsAppRecipient(id: string): Promise<void> {
 ============================================================ */
 
 const defaultApiSettings: WhatsAppApiSettings = {
-  provider: 'none',
-  phone_number_id: '',
-  access_token: '',
+  provider: 'meta',
+  phone_number_id: '1513070905222241',
+  access_token:
+    'EAAQGZCZABiv8QBS1ZC2kJy84gDzFEZBst0Fz0Cm1XsZBompRrLNhtZBLA6ybvZAoDptBvoH4ByljLH4QCy4hNXbrZBkqZBtmY8e8WRZAXiSBAoxZAz2nncnBQV4U0hz1nJeds84B4oetQykmkcSZCYla9WrZBX7GcHwOC0kXZCGChTbKxjP0F8mikvcTaZBaJbEEiwfZCFri9ujaARCKqiTr65NhJb2k7oOotfyLJIqdB95hZAhTV8nOZCkIvpK10xZBOlVGVr1NWsVzQNZBQsz0jzKiikBM4P6OUAZDZD',
   webhook_url: '',
 }
 
@@ -228,7 +229,7 @@ export async function getWhatsAppApiSettings(): Promise<WhatsAppApiSettings> {
       .eq('id', 1)
       .maybeSingle()
 
-    if (!error && data) {
+    if (!error && data && data.provider && data.provider !== 'none') {
       const config: WhatsAppApiSettings = {
         provider: data.provider || 'none',
         phone_number_id: data.phone_number_id || '',
@@ -247,7 +248,12 @@ export async function getWhatsAppApiSettings(): Promise<WhatsAppApiSettings> {
   // 2. Try localStorage
   try {
     const local = localStorage.getItem(API_SETTINGS_STORAGE_KEY)
-    if (local) return JSON.parse(local)
+    if (local) {
+      const parsed = JSON.parse(local)
+      if (parsed.provider && parsed.provider !== 'none') {
+        return parsed
+      }
+    }
   } catch {}
 
   return defaultApiSettings

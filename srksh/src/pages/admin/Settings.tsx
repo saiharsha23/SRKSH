@@ -100,9 +100,10 @@ export default function Settings() {
 
   /* ---------- WhatsApp API Configuration state ---------- */
   const [apiSettings, setApiSettings] = useState<WhatsAppApiSettings>({
-    provider: 'none',
-    phone_number_id: '',
-    access_token: '',
+    provider: 'meta',
+    phone_number_id: '1513070905222241',
+    access_token:
+      'EAAQGZCZABiv8QBS1ZC2kJy84gDzFEZBst0Fz0Cm1XsZBompRrLNhtZBLA6ybvZAoDptBvoH4ByljLH4QCy4hNXbrZBkqZBtmY8e8WRZAXiSBAoxZAz2nncnBQV4U0hz1nJeds84B4oetQykmkcSZCYla9WrZBX7GcHwOC0kXZCGChTbKxjP0F8mikvcTaZBaJbEEiwfZCFri9ujaARCKqiTr65NhJb2k7oOotfyLJIqdB95hZAhTV8nOZCkIvpK10xZBOlVGVr1NWsVzQNZBQsz0jzKiikBM4P6OUAZDZD',
     webhook_url: '',
   })
   const [loadingApi, setLoadingApi] = useState(true)
