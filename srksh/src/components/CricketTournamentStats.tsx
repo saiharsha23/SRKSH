@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Flame,
   Star,
+  Printer,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Sport, Team, CricketMatch, CricketDelivery } from '../types'
@@ -201,27 +202,39 @@ export default function CricketTournamentStats({
             </div>
           </div>
 
-          {/* Subtabs */}
-          <div className="flex gap-2 border-b border-sand pb-2">
-            {[
-              ['table', '🏆 Points Table & NRR'],
-              ['orange', '🧢 Orange Cap (Batting)'],
-              ['purple', '🟣 Purple Cap (Bowling)'],
-              ['mvp', '🏅 MVP Rankings'],
-            ].map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-                  activeTab === k
-                    ? 'bg-bark text-ivory'
-                    : 'bg-sand/40 text-bark hover:bg-sand/70'
-                }`}
-                onClick={() => setActiveTab(k as 'table' | 'orange' | 'purple' | 'mvp')}
-              >
-                {label}
-              </button>
-            ))}
+          {/* Subtabs + Print action */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand pb-2">
+            <div className="flex flex-wrap gap-2">
+              {[
+                ['table', '🏆 Points Table & NRR'],
+                ['orange', '🧢 Orange Cap (Batting)'],
+                ['purple', '🟣 Purple Cap (Bowling)'],
+                ['mvp', '🏅 MVP Rankings'],
+              ].map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                    activeTab === k
+                      ? 'bg-bark text-ivory'
+                      : 'bg-sand/40 text-bark hover:bg-sand/70'
+                  }`}
+                  onClick={() => setActiveTab(k as 'table' | 'orange' | 'purple' | 'mvp')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-sand bg-cream/70 px-3.5 py-1.5 text-xs font-semibold text-bark hover:bg-sand/60 transition shadow-xs"
+              title="Print or save PDF report"
+            >
+              <Printer className="h-3.5 w-3.5 text-terracotta" />
+              <span>Print Tournament Report</span>
+            </button>
           </div>
 
           {/* TAB 1: POINTS TABLE & NRR */}
@@ -506,3 +519,4 @@ export default function CricketTournamentStats({
     </Modal>
   )
 }
+

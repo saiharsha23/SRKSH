@@ -324,19 +324,28 @@ export default function CricketScorerConsole({
         .eq('id', cricketMatch.id)
 
       // Also update sport_matches score_data for instant visibility on cards
-      const formattedScoreA =
-        cricketMatch.batting_first_team_id === teamA?.id
-          ? `${newScore.totalRuns}/${newScore.totalWickets} (${newScore.oversFormatted} ov)`
-          : match.score_data?.team_a_cricket
-          ? `${match.score_data.team_a_cricket.runs}/${match.score_data.team_a_cricket.wickets} (${match.score_data.team_a_cricket.overs} ov)`
-          : ''
+      const isTeamABatting = battingTeam?.id === teamA?.id
+      const currentScoreObj = {
+        runs: String(newScore.totalRuns),
+        wickets: String(newScore.totalWickets),
+        overs: newScore.oversFormatted,
+      }
 
-      const formattedScoreB =
-        cricketMatch.batting_first_team_id === teamB?.id
-          ? `${newScore.totalRuns}/${newScore.totalWickets} (${newScore.oversFormatted} ov)`
-          : match.score_data?.team_b_cricket
-          ? `${match.score_data.team_b_cricket.runs}/${match.score_data.team_b_cricket.wickets} (${match.score_data.team_b_cricket.overs} ov)`
-          : ''
+      const teamAScore = isTeamABatting
+        ? currentScoreObj
+        : match.score_data?.team_a_cricket || {
+            runs: String(cricketMatch.innings1_runs || 0),
+            wickets: String(cricketMatch.innings1_wickets || 0),
+            overs: ballsToOvers(cricketMatch.innings1_legal_balls || 0),
+          }
+
+      const teamBScore = !isTeamABatting
+        ? currentScoreObj
+        : match.score_data?.team_b_cricket || {
+            runs: String(cricketMatch.innings1_runs || 0),
+            wickets: String(cricketMatch.innings1_wickets || 0),
+            overs: ballsToOvers(cricketMatch.innings1_legal_balls || 0),
+          }
 
       await supabase
         .from('sport_matches')
@@ -344,16 +353,8 @@ export default function CricketScorerConsole({
           score_data: {
             ...match.score_data,
             scoring_type: 'cricket',
-            team_a_cricket: {
-              runs: formattedScoreA ? formattedScoreA.split('/')[0] : 0,
-              wickets: formattedScoreA ? formattedScoreA.split('/')[1]?.split(' ')[0] : 0,
-              overs: formattedScoreA ? formattedScoreA.split('(')[1]?.replace(' ov)', '') : '0.0',
-            },
-            team_b_cricket: {
-              runs: formattedScoreB ? formattedScoreB.split('/')[0] : 0,
-              wickets: formattedScoreB ? formattedScoreB.split('/')[1]?.split(' ')[0] : 0,
-              overs: formattedScoreB ? formattedScoreB.split('(')[1]?.replace(' ov)', '') : '0.0',
-            },
+            team_a_cricket: teamAScore,
+            team_b_cricket: teamBScore,
           },
           updated_at: new Date().toISOString(),
         })

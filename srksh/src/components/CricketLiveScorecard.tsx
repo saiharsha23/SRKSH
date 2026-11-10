@@ -18,6 +18,7 @@ import {
   formatBallBadge,
   ballsToOvers,
 } from '../lib/cricket'
+import CricketChartsAndAnalytics from './CricketChartsAndAnalytics'
 
 interface CricketLiveScorecardProps {
   open: boolean
@@ -38,7 +39,7 @@ export default function CricketLiveScorecard({
   const [loading, setLoading] = useState(true)
   const [cricketMatch, setCricketMatch] = useState<CricketMatch | null>(null)
   const [deliveries, setDeliveries] = useState<CricketDelivery[]>([])
-  const [activeTab, setActiveTab] = useState<'live' | 'inngs1' | 'inngs2' | 'info'>('live')
+  const [activeTab, setActiveTab] = useState<'live' | 'inngs1' | 'inngs2' | 'charts' | 'info'>('live')
 
   // Load cricket data
   const loadData = useCallback(async () => {
@@ -94,7 +95,13 @@ export default function CricketLiveScorecard({
       )
       .subscribe()
 
+    // 4-second polling fallback ensures live score updates even if WebSockets are throttled on mobile
+    const pollTimer = setInterval(() => {
+      void loadData()
+    }, 4000)
+
     return () => {
+      clearInterval(pollTimer)
       void supabase.removeChannel(channel)
     }
   }, [open, match.id, loadData])
@@ -286,11 +293,12 @@ export default function CricketLiveScorecard({
           </div>
 
           {/* SUB-TABS */}
-          <div className="flex gap-2 border-b border-sand pb-2">
+          <div className="flex flex-wrap gap-2 border-b border-sand pb-2">
             {[
               ['live', '🔴 Live Commentary'],
               ['inngs1', `Scorecard (Innings 1)`],
               ['inngs2', `Scorecard (Innings 2)`],
+              ['charts', '📈 Manhattan & Worm'],
               ['info', 'ℹ️ Match Info'],
             ].map(([k, label]) => (
               <button
@@ -301,7 +309,7 @@ export default function CricketLiveScorecard({
                     ? 'bg-bark text-ivory'
                     : 'bg-sand/40 text-bark hover:bg-sand/70'
                 }`}
-                onClick={() => setActiveTab(k as 'live' | 'inngs1' | 'inngs2' | 'info')}
+                onClick={() => setActiveTab(k as 'live' | 'inngs1' | 'inngs2' | 'charts' | 'info')}
               >
                 {label}
               </button>
@@ -369,6 +377,17 @@ export default function CricketLiveScorecard({
             <InningsScorecardView
               scorecard={scorecard2}
               teamName={cricketMatch.batting_first_team_id === teamA?.id ? teamB?.name : teamA?.name}
+            />
+          )}
+
+          {/* TAB: CHARTS & ANALYTICS */}
+          {activeTab === 'charts' && (
+            <CricketChartsAndAnalytics
+              match={match}
+              cricketMatch={cricketMatch}
+              deliveries={deliveries}
+              teamA={teamA}
+              teamB={teamB}
             />
           )}
 
