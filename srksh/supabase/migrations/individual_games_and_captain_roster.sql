@@ -125,3 +125,4 @@ end $$;
 grant execute on function public.team_leader_save_squad(uuid, text, uuid, uuid[]) to anon, authenticated;
 
 notify pgrst, 'reload schema';
+

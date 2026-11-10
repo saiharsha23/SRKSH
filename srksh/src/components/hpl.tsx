@@ -88,11 +88,10 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
       {sport.description && <p className="mt-3 text-sm text-bark-soft">{sport.description}</p>}
 
       {sport.registration_deadline && (
-        <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-          isDeadlinePassed(sport.registration_deadline)
+        <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${isDeadlinePassed(sport.registration_deadline)
             ? 'bg-red-50 text-red-800 ring-1 ring-red-200'
             : 'bg-sand/40 text-bark'
-        }`}>
+          }`}>
           <Clock className={`h-3.5 w-3.5 shrink-0 ${isDeadlinePassed(sport.registration_deadline) ? 'text-red-600' : 'text-terracotta'}`} />
           <span>
             {isDeadlinePassed(sport.registration_deadline) ? 'Registration Closed: ' : 'Registration Closes: '}
