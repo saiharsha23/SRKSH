@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import {
   Award,
   Calendar,
+  Camera,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -12,13 +13,17 @@ import {
   ExternalLink,
   LogOut,
   MapPin,
+  Pencil,
   Plus,
   Search,
   Shield,
+  Sparkles,
   Swords,
+  Trash2,
   TrendingUp,
   Trophy,
   UserCheck,
+  UserPlus,
   Users,
   X,
   Loader2,
@@ -26,7 +31,7 @@ import {
 import { useHpl } from '../../lib/data'
 import { useLeaderAuth } from '../../lib/leaderAuth'
 import { formatMatchScoreDisplay } from '../../lib/tournament'
-import { imageUrl } from '../../lib/supabase'
+import { imageUrl, uploadImageWithFallback } from '../../lib/supabase'
 import type { Sport, Team, Member, SportMatch } from '../../types'
 import CricketLiveScorecard from '../../components/CricketLiveScorecard'
 import CricketTournamentStats from '../../components/CricketTournamentStats'
@@ -416,10 +421,338 @@ function SquadModal({
   )
 }
 
+/* ---------- Modal: Add / Edit Team Member & Photo ---------- */
+function LeaderMemberModal({
+  open,
+  onClose,
+  member,
+  teamId,
+  isCaptain,
+  onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  member: Member | null
+  teamId: string
+  isCaptain?: boolean
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const { addMember, updateMember, updateCaptainPhoto } = useLeaderAuth()
+  const [name, setName] = useState(member?.name ?? '')
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(imageUrl(member?.photo_path) ?? null)
+  const [removePhoto, setRemovePhoto] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (member) {
+      setName(member.name)
+      setPreview(imageUrl(member.photo_path) ?? null)
+    } else {
+      setName('')
+      setPreview(null)
+    }
+    setFile(null)
+    setRemovePhoto(false)
+    setError('')
+  }, [member, open])
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) {
+      setError('Please select a JPG, PNG or WebP image.')
+      return
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setError('Image must be under 5 MB.')
+      return
+    }
+    setFile(f)
+    setRemovePhoto(false)
+    setPreview(URL.createObjectURL(f))
+    setError('')
+  }
+
+  async function handleSave() {
+    const cleanName = name.trim()
+    if (!cleanName) {
+      setError('Player name is required.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      let photoPath = member?.photo_path ?? null
+      if (file) {
+        photoPath = await uploadImageWithFallback(file, 'members')
+      } else if (removePhoto) {
+        photoPath = null
+      }
+
+      if (member) {
+        if (isCaptain) {
+          await updateCaptainPhoto(photoPath)
+          toast('success', "Captain's photo updated!")
+        } else {
+          await updateMember(member.id, cleanName, photoPath)
+          toast('success', `${cleanName} updated!`)
+        }
+      } else {
+        await addMember(cleanName, photoPath)
+        toast('success', `${cleanName} added to team roster!`)
+      }
+      onSaved()
+      onClose()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save member.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={member ? (isCaptain ? "Edit Captain's Photo" : `Edit ${member.name}`) : 'Add New Team Member'}
+    >
+      <div className="space-y-4">
+        {error && <ErrorBox message={error} />}
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-bark">
+            Player Name *
+          </label>
+          <input
+            type="text"
+            disabled={isCaptain || busy}
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Rahul Sharma"
+            className="input mt-1.5 w-full text-sm"
+          />
+          {isCaptain && (
+            <p className="mt-1 text-[11px] text-bark-soft">
+              Captain name is set in official registration. You can upload or update the captain's photo below.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-bark">
+            Player Photo
+          </label>
+
+          <div className="mt-2 flex items-center gap-4">
+            <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-sand/40 border border-sand overflow-hidden shadow-xs">
+              {preview && !removePhoto ? (
+                <img src={preview} alt="Preview" className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-serif text-2xl font-bold text-bark">
+                  {name.trim() ? name.trim().charAt(0).toUpperCase() : '👤'}
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="btn-outline btn-sm inline-flex items-center gap-1.5 cursor-pointer text-xs font-semibold">
+                <Camera className="h-3.5 w-3.5" />
+                <span>{preview && !removePhoto ? 'Change Photo' : 'Upload Photo'}</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  disabled={busy}
+                />
+              </label>
+
+              {preview && !removePhoto && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFile(null)
+                    setRemovePhoto(true)
+                    setPreview(null)
+                  }}
+                  className="btn-ghost btn-sm text-xs text-red-600 block hover:bg-red-50 cursor-pointer"
+                  disabled={busy}
+                >
+                  Remove Photo
+                </button>
+              )}
+              <p className="text-[11px] text-bark-soft">JPG, PNG, or WebP (max 5 MB).</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2 border-t border-sand/50 pt-4">
+          <button
+            type="button"
+            className="btn-outline btn-sm"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={handleSave}
+            disabled={busy || !name.trim()}
+          >
+            {busy ? (
+              <span className="flex items-center gap-1">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Saving...</span>
+              </span>
+            ) : member ? (
+              'Save Changes'
+            ) : (
+              'Add to Roster'
+            )}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ---------- Modal: Quick Add Multiple Players ---------- */
+function LeaderQuickAddModal({
+  open,
+  onClose,
+  existingNames,
+  onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  existingNames: string[]
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const { addMember } = useLeaderAuth()
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [progress, setProgress] = useState('')
+
+  const existingSet = useMemo(
+    () => new Set(existingNames.map(n => n.trim().toLowerCase())),
+    [existingNames]
+  )
+
+  const parsedNames = useMemo(() => {
+    return text
+      .split(/[\n,]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+  }, [text])
+
+  const newNames = useMemo(() => {
+    const seen = new Set<string>()
+    return parsedNames.filter(n => {
+      const lower = n.toLowerCase()
+      if (existingSet.has(lower) || seen.has(lower)) return false
+      seen.add(lower)
+      return true
+    })
+  }, [parsedNames, existingSet])
+
+  async function handleAddAll() {
+    if (!newNames.length) {
+      setError('No new unique player names entered.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    let addedCount = 0
+    try {
+      for (let i = 0; i < newNames.length; i++) {
+        const name = newNames[i]
+        setProgress(`Adding player ${i + 1} of ${newNames.length}: ${name}...`)
+        await addMember(name)
+        addedCount++
+      }
+      toast('success', `Added ${addedCount} player${addedCount === 1 ? '' : 's'} to roster!`)
+      setText('')
+      onSaved()
+      onClose()
+    } catch (err: any) {
+      setError(`Added ${addedCount} player(s). Error: ${err?.message || 'Failed to complete.'}`)
+      onSaved()
+    } finally {
+      setBusy(false)
+      setProgress('')
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Quick Add Multiple Players">
+      <div className="space-y-4">
+        {error && <ErrorBox message={error} />}
+
+        <p className="text-xs text-bark-soft">
+          Paste or type multiple player names separated by newlines or commas. Duplicate players already in your team will be skipped automatically.
+        </p>
+
+        <textarea
+          rows={6}
+          disabled={busy}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={`Arjun Mehta\nKarthik R\nVigneshwar\nSachin K`}
+          className="input w-full font-mono text-sm"
+        />
+
+        <div className="flex items-center justify-between text-xs text-bark-soft">
+          <span>
+            {newNames.length} new player{newNames.length === 1 ? '' : 's'} detected
+          </span>
+          {parsedNames.length > newNames.length && (
+            <span className="text-amber-600 font-medium">
+              ({parsedNames.length - newNames.length} duplicates skipped)
+            </span>
+          )}
+        </div>
+
+        {progress && (
+          <p className="text-xs text-saffron-deep font-semibold flex items-center gap-1.5 animate-pulse">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>{progress}</span>
+          </p>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2 border-t border-sand/50 pt-4">
+          <button
+            type="button"
+            className="btn-outline btn-sm"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={handleAddAll}
+            disabled={busy || newNames.length === 0}
+          >
+            {busy ? 'Adding Players...' : `Add ${newNames.length} Player${newNames.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 
 /* ---------- Main Leader Portal ---------- */
 export default function LeaderPortal() {
-  const { session, logout, registerSport } = useLeaderAuth()
+  const { session, logout, registerSport, deleteMember } = useLeaderAuth()
   const { data, loading, error, reload } = useHpl()
   const toast = useToast()
 
@@ -430,6 +763,28 @@ export default function LeaderPortal() {
   const [sportFilter, setSportFilter] = useState<'all' | 'registered' | 'upcoming'>('all')
   const [liveScorecardMatch, setLiveScorecardMatch] = useState<SportMatch | null>(null)
   const [cricketStatsSport, setCricketStatsSport] = useState<Sport | null>(null)
+
+  // Roster Management States
+  const [addMemberModalOpen, setAddMemberModalOpen] = useState(false)
+  const [editingMember, setEditingMember] = useState<{ member: Member; isCaptain: boolean } | null>(null)
+  const [quickAddModalOpen, setQuickAddModalOpen] = useState(false)
+  const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<Member | null>(null)
+  const [deletingMember, setDeletingMember] = useState(false)
+
+  async function handleDeleteMember() {
+    if (!deleteMemberConfirm) return
+    setDeletingMember(true)
+    try {
+      await deleteMember(deleteMemberConfirm.id)
+      toast('success', `${deleteMemberConfirm.name} removed from roster.`)
+      setDeleteMemberConfirm(null)
+      await reload()
+    } catch (err: any) {
+      toast('error', err?.message || 'Failed to remove member.')
+    } finally {
+      setDeletingMember(false)
+    }
+  }
 
   useTitle(session ? `${session.teamName} · Team Leader Portal` : 'Team Leader Portal')
 
@@ -925,18 +1280,64 @@ export default function LeaderPortal() {
         {/* TAB 2: TEAM ROSTER */}
         {activeTab === 'roster' && (
           <div>
-            <div className="mb-6">
-              <h2 className="text-xl font-bold sm:text-2xl">Official Team Roster</h2>
-              <p className="text-xs text-bark-soft sm:text-sm">
-                These are the registered members of {currentTeam.name}. Only players on this roster can be selected for sports squads.
-              </p>
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold sm:text-2xl flex items-center gap-2">
+                  <span>Official Team Roster</span>
+                  <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-xs font-bold text-saffron-deep">
+                    {currentTeam.team_members?.length ?? 0} Players
+                  </span>
+                </h2>
+                <p className="text-xs text-bark-soft sm:text-sm mt-0.5">
+                  Manage registered players of {currentTeam.name}. Add new team members, update names, and upload profile photos.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickAddModalOpen(true)}
+                  className="btn-outline btn-sm flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>⚡ Quick Add Multiple</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMemberModalOpen(true)}
+                  className="btn btn-sm btn-primary flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>+ Add Player</span>
+                </button>
+              </div>
             </div>
 
             {(!currentTeam.team_members || currentTeam.team_members.length === 0) ? (
-              <EmptyState
-                title="No roster members"
-                text="Ask an administrator to add players to your team roster in the Admin panel."
-              />
+              <div className="card text-center py-12">
+                <Users className="mx-auto h-12 w-12 text-sand" />
+                <h3 className="mt-3 font-serif text-lg font-bold text-bark">No roster members yet</h3>
+                <p className="mt-1 text-xs text-bark-soft max-w-sm mx-auto">
+                  Add players to your team roster so they can be selected when picking squads for sports and matches.
+                </p>
+                <div className="mt-5 flex justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddMemberModalOpen(true)}
+                    className="btn btn-sm btn-primary"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    <span>+ Add Your First Player</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAddModalOpen(true)}
+                    className="btn-outline btn-sm"
+                  >
+                    <span>⚡ Quick Add Multiple</span>
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {currentTeam.team_members.map((m, idx) => {
@@ -950,47 +1351,99 @@ export default function LeaderPortal() {
                   )
 
                   return (
-                    <div key={m.id} className="card flex flex-col justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-sand/40 font-serif font-bold text-bark">
-                          {m.photo_path ? (
-                            <Img
-                              src={imageUrl(m.photo_path)}
-                              alt={m.name}
-                              className="h-full w-full rounded-full object-cover"
-                            />
+                    <div
+                      key={m.id}
+                      className="card flex flex-col justify-between group hover:border-saffron/70 hover:shadow-md transition"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {/* Member Photo with hover camera trigger */}
+                            <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-sand/40 border border-sand/70 font-serif font-bold text-bark overflow-hidden shadow-xs">
+                              {m.photo_path ? (
+                                <Img
+                                  src={imageUrl(m.photo_path)}
+                                  alt={m.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <span className="text-xl">{m.name.charAt(0).toUpperCase()}</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setEditingMember({ member: m, isCaptain })}
+                                className="absolute inset-0 flex flex-col items-center justify-center bg-black/55 text-white opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                                title="Change photo"
+                              >
+                                <Camera className="h-4 w-4" />
+                                <span className="text-[9px] font-semibold">Photo</span>
+                              </button>
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-bold text-bark text-base" title={m.name}>
+                                {m.name}
+                              </p>
+                              <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                {isCaptain ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-saffron/20 border border-saffron/40 px-2 py-0.5 text-[10px] font-bold text-saffron-deep">
+                                    ⭐ Team Captain
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full bg-sand/60 px-2 py-0.5 text-[10px] font-medium text-bark-soft">
+                                    Player #{idx + 1}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons: Edit & Delete */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setEditingMember({ member: m, isCaptain })}
+                              className="rounded-lg p-1.5 text-bark-soft hover:bg-sand/60 hover:text-bark transition cursor-pointer"
+                              title={isCaptain ? "Edit Captain's Photo" : "Edit player name & photo"}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+
+                            {!isCaptain && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteMemberConfirm(m)}
+                                className="rounded-lg p-1.5 text-bark-soft hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                                title="Remove player from roster"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Playing in sports tags */}
+                        <div className="mt-3 border-t border-sand/40 pt-2.5 text-xs">
+                          <span className="font-semibold text-bark-soft text-[11px] uppercase tracking-wider">
+                            Playing in:
+                          </span>
+                          {memberSports.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {memberSports.map(s => (
+                                <span
+                                  key={s.id}
+                                  className="rounded-full bg-cream border border-sand/60 px-2 py-0.5 text-[11px] font-medium text-bark"
+                                >
+                                  {s.name}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
-                            m.name.charAt(0).toUpperCase()
+                            <p className="text-[11px] text-bark-faint italic mt-0.5">
+                              Not selected in any sport squad yet
+                            </p>
                           )}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold text-bark">{m.name}</p>
-                          <p className="text-xs text-bark-soft">
-                            {isCaptain ? (
-                              <span className="font-bold text-terracotta">Captain</span>
-                            ) : (
-                              `Player #${idx + 1}`
-                            )}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 border-t border-sand/40 pt-3 text-xs">
-                        <span className="font-medium text-bark-soft">Playing in:</span>
-                        {memberSports.length > 0 ? (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {memberSports.map(s => (
-                              <span
-                                key={s.id}
-                                className="rounded bg-cream px-2 py-0.5 text-[11px] font-medium text-bark"
-                              >
-                                {s.name}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-[11px] text-bark-faint italic mt-0.5">Not assigned to any sport squad</p>
-                        )}
                       </div>
                     </div>
                   )
@@ -1291,6 +1744,42 @@ export default function LeaderPortal() {
           bundle={bundle}
         />
       )}
+
+      {/* Add / Edit Member & Photo Modal */}
+      {(addMemberModalOpen || editingMember) && (
+        <LeaderMemberModal
+          open={addMemberModalOpen || !!editingMember}
+          onClose={() => {
+            setAddMemberModalOpen(false)
+            setEditingMember(null)
+          }}
+          member={editingMember?.member ?? null}
+          teamId={currentTeam?.id ?? session.teamId}
+          isCaptain={editingMember?.isCaptain}
+          onSaved={() => void reload()}
+        />
+      )}
+
+      {/* Quick Add Multiple Players Modal */}
+      {quickAddModalOpen && (
+        <LeaderQuickAddModal
+          open={quickAddModalOpen}
+          onClose={() => setQuickAddModalOpen(false)}
+          existingNames={(currentTeam?.team_members ?? []).map(m => m.name)}
+          onSaved={() => void reload()}
+        />
+      )}
+
+      {/* Delete Member Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteMemberConfirm}
+        busy={deletingMember}
+        title={`Remove ${deleteMemberConfirm?.name} from roster?`}
+        message="This will remove the player from your official team roster and any sport squads they were registered in."
+        confirmLabel="Remove Player"
+        onCancel={() => setDeleteMemberConfirm(null)}
+        onConfirm={() => void handleDeleteMember()}
+      />
     </div>
   )
 }
