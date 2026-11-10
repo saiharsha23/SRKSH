@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, Calendar, ChevronDown, Clock, Crown, MapPin, Medal, Trophy, Users } from 'lucide-react'
+import { Activity, Calendar, ChevronDown, Clock, Crown, MapPin, Medal, TrendingUp, Trophy, Users } from 'lucide-react'
 import type { LeaderRow, Participant, Placement, Sport, SportResult, SportTeam, Team, SportMatch } from '../types'
 import type { SportBundle } from '../lib/data'
 import { imageUrl } from '../lib/supabase'
@@ -7,6 +7,7 @@ import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal } from '../lib/format
 import { Badge, ColourDot, EmptyState, Img } from './ui'
 import { formatMatchScoreDisplay } from '../lib/tournament'
 import CricketLiveScorecard from './CricketLiveScorecard'
+import CricketTournamentStats from './CricketTournamentStats'
 
 export function TeamCard({ team, row }: { team: Team; row?: LeaderRow }) {
   const [open, setOpen] = useState(false)
@@ -79,6 +80,8 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
     sportMatches.length > 0 && !done ? 'matches' : 'result'
   )
   const [viewingScorecardMatch, setViewingScorecardMatch] = useState<SportMatch | null>(null)
+  const [statsOpen, setStatsOpen] = useState(false)
+  const isCricket = sport.name.toLowerCase().includes('cricket')
 
   return (
     <article className={`overflow-hidden rounded-3xl p-6 shadow-soft ring-1 transition ${done ? 'bg-gradient-to-br from-saffron-soft/50 to-white ring-saffron/50' : 'bg-white/70 ring-sand'}`}>
@@ -131,33 +134,46 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
         </div>
       )}
 
-      {/* Segmented View Switcher if matches exist */}
-      {sportMatches.length > 0 && (
-        <div className="mt-5 flex gap-2 border-b border-sand pb-2">
+      {/* Segmented View Switcher & Cricket Stats */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-b border-sand pb-2">
+        {sportMatches.length > 0 && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${
+                tab === 'matches'
+                  ? 'bg-bark text-ivory'
+                  : 'bg-sand/40 text-bark hover:bg-sand/70'
+              }`}
+              onClick={() => setTab('matches')}
+            >
+              📅 Matches & Schedule ({sportMatches.length})
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${
+                tab === 'result'
+                  ? 'bg-bark text-ivory'
+                  : 'bg-sand/40 text-bark hover:bg-sand/70'
+              }`}
+              onClick={() => setTab('result')}
+            >
+              🏆 {done ? 'Final Placements' : 'Results & Standings'}
+            </button>
+          </div>
+        )}
+
+        {isCricket && (
           <button
             type="button"
-            className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${
-              tab === 'matches'
-                ? 'bg-bark text-ivory'
-                : 'bg-sand/40 text-bark hover:bg-sand/70'
-            }`}
-            onClick={() => setTab('matches')}
+            className="btn-outline btn-sm py-1 px-3 text-xs font-semibold flex items-center gap-1.5 border-amber-500 bg-amber-50 text-amber-950 hover:bg-amber-100 ml-auto"
+            onClick={() => setStatsOpen(true)}
           >
-            📅 Matches & Schedule ({sportMatches.length})
+            <TrendingUp className="h-3.5 w-3.5 text-amber-700" />
+            📊 Stats & Caps (NRR)
           </button>
-          <button
-            type="button"
-            className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${
-              tab === 'result'
-                ? 'bg-bark text-ivory'
-                : 'bg-sand/40 text-bark hover:bg-sand/70'
-            }`}
-            onClick={() => setTab('result')}
-          >
-            🏆 {done ? 'Final Placements' : 'Results & Standings'}
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* MATCHES VIEW */}
       {sportMatches.length > 0 && tab === 'matches' ? (
@@ -357,6 +373,16 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
           onClose={() => setViewingScorecardMatch(null)}
           match={viewingScorecardMatch}
           teams={teams}
+        />
+      )}
+
+      {statsOpen && (
+        <CricketTournamentStats
+          open={statsOpen}
+          onClose={() => setStatsOpen(false)}
+          sport={sport}
+          teams={teams}
+          bundle={bundle}
         />
       )}
     </article>

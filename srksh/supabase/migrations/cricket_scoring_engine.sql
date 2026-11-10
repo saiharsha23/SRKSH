@@ -103,3 +103,4 @@ exception when others then null;
 end $$;
 
 notify pgrst, 'reload schema';
+

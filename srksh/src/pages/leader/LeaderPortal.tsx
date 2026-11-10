@@ -16,6 +16,7 @@ import {
   Search,
   Shield,
   Swords,
+  TrendingUp,
   Trophy,
   UserCheck,
   Users,
@@ -28,6 +29,7 @@ import { formatMatchScoreDisplay } from '../../lib/tournament'
 import { imageUrl } from '../../lib/supabase'
 import type { Sport, Team, Member, SportMatch } from '../../types'
 import CricketLiveScorecard from '../../components/CricketLiveScorecard'
+import CricketTournamentStats from '../../components/CricketTournamentStats'
 import {
   Badge,
   ColourDot,
@@ -427,6 +429,7 @@ export default function LeaderPortal() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [sportFilter, setSportFilter] = useState<'all' | 'registered' | 'upcoming'>('all')
   const [liveScorecardMatch, setLiveScorecardMatch] = useState<SportMatch | null>(null)
+  const [cricketStatsSport, setCricketStatsSport] = useState<Sport | null>(null)
 
   useTitle(session ? `${session.teamName} · Team Leader Portal` : 'Team Leader Portal')
 
@@ -1044,19 +1047,36 @@ export default function LeaderPortal() {
 
               {/* Team's Scheduled Matches */}
               <div className="card lg:col-span-3">
-                <div className="flex items-center justify-between pb-2 border-b border-sand/60">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-sand/60">
                   <h3 className="font-serif text-lg font-bold flex items-center gap-2">
                     <Calendar className="h-5 w-5 text-terracotta" />
                     Your Team's Match Schedule
                   </h3>
-                  <span className="text-xs text-bark-soft">
-                    {
-                      bundle.matches.filter(
-                        m => m.team_a_id === currentTeam.id || m.team_b_id === currentTeam.id
-                      ).length
-                    }{' '}
-                    matches
-                  </span>
+
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const cricketSport = bundle.sports.find(s => s.name.toLowerCase().includes('cricket'))
+                      return cricketSport ? (
+                        <button
+                          type="button"
+                          className="btn-outline btn-sm py-1 px-3 text-xs font-semibold flex items-center gap-1.5 border-amber-500 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                          onClick={() => setCricketStatsSport(cricketSport)}
+                        >
+                          <TrendingUp className="h-3.5 w-3.5 text-amber-700" />
+                          Cricket NRR & Caps
+                        </button>
+                      ) : null
+                    })()}
+
+                    <span className="text-xs text-bark-soft">
+                      {
+                        bundle.matches.filter(
+                          m => m.team_a_id === currentTeam.id || m.team_b_id === currentTeam.id
+                        ).length
+                      }{' '}
+                      matches
+                    </span>
+                  </div>
                 </div>
 
                 {bundle.matches.filter(
@@ -1257,6 +1277,17 @@ export default function LeaderPortal() {
           onClose={() => setLiveScorecardMatch(null)}
           match={liveScorecardMatch}
           teams={data.teams}
+        />
+      )}
+
+      {/* Cricket Tournament Stats & NRR Modal */}
+      {cricketStatsSport && (
+        <CricketTournamentStats
+          open={!!cricketStatsSport}
+          onClose={() => setCricketStatsSport(null)}
+          sport={cricketStatsSport}
+          teams={data.teams}
+          bundle={bundle}
         />
       )}
     </div>

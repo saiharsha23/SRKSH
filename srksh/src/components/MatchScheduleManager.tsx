@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trophy, Sparkles, Trash2, Calendar, MapPin, Clock, Edit3, ArrowRight } from 'lucide-react'
+import { Plus, Trophy, Sparkles, Trash2, Calendar, MapPin, Clock, Edit3, ArrowRight, TrendingUp } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Sport, Team, SportMatch, MatchStatus } from '../types'
 import type { SportBundle } from '../lib/data'
@@ -14,6 +14,7 @@ import {
 import MatchScorerModal from './MatchScorerModal'
 import CricketScorerConsole from './CricketScorerConsole'
 import CricketLiveScorecard from './CricketLiveScorecard'
+import CricketTournamentStats from './CricketTournamentStats'
 
 interface MatchScheduleManagerProps {
   sport: Sport
@@ -51,6 +52,7 @@ export default function MatchScheduleManager({
   const [syncPlacementsConfirm, setSyncPlacementsConfirm] = useState(false)
   const [cricketConsoleMatch, setCricketConsoleMatch] = useState<SportMatch | null>(null)
   const [cricketScorecardMatch, setCricketScorecardMatch] = useState<SportMatch | null>(null)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   // Quick add match modal state
@@ -302,6 +304,17 @@ export default function MatchScheduleManager({
             >
               <Trophy className="h-3.5 w-3.5 text-gold" />
               Sync Final to Leaderboard
+            </button>
+          )}
+
+          {sport.name.toLowerCase().includes('cricket') && (
+            <button
+              type="button"
+              className="btn-outline btn-sm border-amber-500 bg-amber-50 text-amber-950 font-semibold hover:bg-amber-100 flex items-center gap-1.5"
+              onClick={() => setStatsOpen(true)}
+            >
+              <TrendingUp className="h-3.5 w-3.5 text-amber-700" />
+              Stats & NRR
             </button>
           )}
 
@@ -791,6 +804,17 @@ export default function MatchScheduleManager({
           onClose={() => setCricketScorecardMatch(null)}
           match={cricketScorecardMatch}
           teams={teams}
+        />
+      )}
+
+      {/* Cricket Tournament Stats & NRR */}
+      {statsOpen && (
+        <CricketTournamentStats
+          open={statsOpen}
+          onClose={() => setStatsOpen(false)}
+          sport={sport}
+          teams={teams}
+          bundle={bundle}
         />
       )}
 
