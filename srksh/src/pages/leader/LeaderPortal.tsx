@@ -56,7 +56,7 @@ function SquadModal({
   const toast = useToast()
   const { saveSquad } = useLeaderAuth()
   const isIndividual = sport.game_type === 'individual'
-  const maxLimit = isIndividual ? (sport.max_participants ?? 1) : null
+  const maxLimit = isIndividual ? (sport.max_participants ?? null) : null
 
   const rawRoster = team.team_members ?? []
   const hasCaptain = rawRoster.some(m => m.name.trim().toLowerCase() === team.captain_name.trim().toLowerCase())
@@ -132,7 +132,7 @@ function SquadModal({
 
   function selectAll() {
     if (deadlinePassed) return
-    if (isIndividual && maxLimit) {
+    if (maxLimit !== null) {
       const toAdd = stableRoster.slice(0, maxLimit).map(m => m.id)
       setSelectedIds(toAdd)
       return
@@ -191,21 +191,19 @@ function SquadModal({
             </span>
             {isIndividual && (
               <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-xs font-bold text-saffron-deep">
-                👤 Individual Game ({maxLimit ?? 1} player{maxLimit === 1 ? '' : 's'})
+                👤 Individual Game {maxLimit ? `(Max ${maxLimit} per team)` : '(Entire team can enter)'}
               </span>
             )}
           </div>
           <div className="flex gap-2">
-            {!isIndividual && (
-              <button
-                type="button"
-                className="btn-outline btn-sm text-xs"
-                onClick={selectAll}
-                disabled={saving || roster.length === 0 || deadlinePassed}
-              >
-                Select All
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn-outline btn-sm text-xs"
+              onClick={selectAll}
+              disabled={saving || roster.length === 0 || deadlinePassed}
+            >
+              Select All
+            </button>
             <button
               type="button"
               className="btn-outline btn-sm text-xs"
@@ -216,6 +214,24 @@ function SquadModal({
             </button>
           </div>
         </div>
+
+        {isIndividual && (
+          <div className="rounded-xl bg-saffron-soft/30 p-3 text-xs text-bark flex items-center justify-between gap-2 border border-saffron/40">
+            <div>
+              <p className="font-semibold text-bark">🎯 Individual Competition</p>
+              <p className="text-bark-soft mt-0.5">
+                {maxLimit
+                  ? `Select up to ${maxLimit} player(s) to represent your team. Each participant competes individually.`
+                  : 'Multiple players or your entire team can participate! Each member competes individually for rankings.'}
+              </p>
+            </div>
+            {selectedIds.length === roster.length && roster.length > 0 && (
+              <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 shrink-0">
+                ✓ Full Team Entered
+              </span>
+            )}
+          </div>
+        )}
 
         {deadlinePassed && (
           <div role="alert" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 flex items-center gap-2">
@@ -747,7 +763,7 @@ export default function LeaderPortal() {
                               <span className="text-xs text-bark-soft">{s.category || 'General Sport'}</span>
                               {s.game_type === 'individual' ? (
                                 <span className="rounded-full bg-saffron-soft px-2 py-0.5 text-[10px] font-bold text-saffron-deep">
-                                  👤 Individual ({s.max_participants ?? 1}p)
+                                  👤 Individual {s.max_participants ? `(${s.max_participants} max)` : '(All welcome)'}
                                 </span>
                               ) : (
                                 <span className="rounded-full bg-sand/40 px-2 py-0.5 text-[10px] font-medium text-bark-soft">

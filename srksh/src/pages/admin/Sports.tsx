@@ -17,7 +17,7 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
   const [category, setCategory] = useState(sport?.category ?? '')
   const [gameType, setGameType] = useState<'team' | 'individual'>(sport?.game_type ?? 'team')
   const [maxParticipants, setMaxParticipants] = useState<number | ''>(
-    sport?.max_participants ?? (sport?.game_type === 'individual' ? 1 : '')
+    sport?.max_participants ?? ''
   )
   const [description, setDescription] = useState(sport?.description ?? '')
   const [status, setStatus] = useState<SportStatus>(sport?.status ?? 'upcoming')
@@ -59,7 +59,7 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
         description: description.trim() || null,
         status,
         game_type: gameType,
-        max_participants: gameType === 'individual' ? (Number(maxParticipants) || 1) : null,
+        max_participants: gameType === 'individual' ? (maxParticipants ? Number(maxParticipants) : null) : null,
         registration_deadline,
         image_path,
         updated_at: new Date().toISOString(),
@@ -92,27 +92,21 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
             <select
               className="input"
               value={gameType}
-              onChange={e => {
-                const val = e.target.value as 'team' | 'individual'
-                setGameType(val)
-                if (val === 'individual' && !maxParticipants) {
-                  setMaxParticipants(1)
-                }
-              }}
+              onChange={e => setGameType(e.target.value as 'team' | 'individual')}
             >
               <option value="team">👥 Team Sport (Squad)</option>
-              <option value="individual">👤 Individual Game (Single / Limited Players)</option>
+              <option value="individual">👤 Individual Game (Contestants compete individually)</option>
             </select>
           </Field>
           {gameType === 'individual' ? (
-            <Field label="Max players per team" hint="e.g. 1 for singles, 2 for doubles">
+            <Field label="Max players per team (optional)" hint="Leave blank to allow any / entire team to enter">
               <input
                 type="number"
                 min={1}
                 className="input"
                 value={maxParticipants}
                 onChange={e => setMaxParticipants(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1))}
-                placeholder="1"
+                placeholder="No limit (entire team allowed)"
               />
             </Field>
           ) : (
@@ -209,7 +203,7 @@ export default function Sports() {
                         <span className="text-xs text-bark-soft">{s.category || 'Sport'}</span>
                         {s.game_type === 'individual' ? (
                           <span className="rounded-full bg-saffron-soft px-2 py-0.5 text-[10px] font-bold text-saffron-deep">
-                            👤 Individual ({s.max_participants ?? 1}p)
+                            👤 Individual {s.max_participants ? `(${s.max_participants} max)` : '(Open to all)'}
                           </span>
                         ) : (
                           <span className="rounded-full bg-sand/40 px-2 py-0.5 text-[10px] font-medium text-bark-soft">
@@ -411,7 +405,7 @@ function TeamParticipants({ sport, team, bundle, onChanged, canRemoveTeam }: { s
           <input className="input mb-2" placeholder="Search roster…" aria-label="Search roster" value={q} onChange={e => setQ(e.target.value)} />
           {sport.game_type === 'individual' && (
             <div className="mb-2 rounded-lg bg-saffron-soft/40 px-2.5 py-1 text-xs text-saffron-deep font-semibold">
-              👤 Individual Game: Max {sport.max_participants ?? 1} participant(s) per team.
+              👤 Individual Game: {sport.max_participants ? `Max ${sport.max_participants} participant(s) per team.` : 'Entire team can participate as individual contestants.'}
             </div>
           )}
           <div className="mb-2 flex gap-3 text-xs"><button className="underline" onClick={() => setChecked(new Set(roster.map(m => m.id)))}>Select all</button><button className="underline" onClick={() => setChecked(new Set())}>Clear</button></div>
@@ -799,7 +793,7 @@ export function SportDetail() {
         text={[
           sport.category,
           sport.game_type === 'individual'
-            ? `👤 Individual Game (${sport.max_participants ?? 1} player(s) per team)`
+            ? `👤 Individual Game ${sport.max_participants ? `(Max ${sport.max_participants} per team)` : '(Entire team can participate)'}`
             : '👥 Team Sport',
         ].filter(Boolean).join(' · ')}
         action={

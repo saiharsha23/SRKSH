@@ -78,7 +78,7 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
             <p className="text-xs uppercase tracking-wider text-bark-soft">{sport.category || 'Sport'}</p>
             {sport.game_type === 'individual' && (
               <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-[10px] font-bold text-saffron-deep">
-                👤 Individual Game ({sport.max_participants ?? 1}p)
+                👤 Individual Game {sport.max_participants ? `(Max ${sport.max_participants} per team)` : ''}
               </span>
             )}
           </div>
