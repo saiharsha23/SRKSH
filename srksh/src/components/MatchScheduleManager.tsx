@@ -539,7 +539,7 @@ export default function MatchScheduleManager({
 
                         {/* Edit & Delete */}
                         <div className="flex flex-wrap items-center gap-1">
-                          {(sport.name.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') && (
+                          {(sport.name.toLowerCase().includes('cricket') || (sport as any).scoring_type === 'cricket' || m.score_data?.scoring_type === 'cricket' || m.score_data?.team_a_cricket != null) && (
                             <>
                               <button
                                 type="button"

@@ -1103,8 +1103,8 @@ export default function LeaderPortal() {
                         return (
                           <div
                             key={m.id}
-                            onClick={() => (sport?.name?.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') ? setLiveScorecardMatch(m) : undefined}
-                            className={`rounded-2xl border p-4 shadow-soft transition ${(sport?.name?.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') ? 'cursor-pointer hover:shadow-md hover:border-saffron/70' : ''} ${
+                            onClick={() => (sport?.name?.toLowerCase().includes('cricket') || (sport as any)?.scoring_type === 'cricket' || m.score_data?.scoring_type === 'cricket' || m.score_data?.team_a_cricket != null) ? setLiveScorecardMatch(m) : undefined}
+                            className={`rounded-2xl border p-4 shadow-soft transition ${(sport?.name?.toLowerCase().includes('cricket') || (sport as any)?.scoring_type === 'cricket' || m.score_data?.scoring_type === 'cricket' || m.score_data?.team_a_cricket != null) ? 'cursor-pointer hover:shadow-md hover:border-saffron/70' : ''} ${
                               m.status === 'live'
                                 ? 'border-red-400 bg-red-50/50 ring-1 ring-red-400'
                                 : m.status === 'completed'
@@ -1178,7 +1178,7 @@ export default function LeaderPortal() {
                               </div>
                             )}
 
-                            {(sport?.name?.toLowerCase().includes('cricket') || m.score_data?.scoring_type === 'cricket') && (
+                            {(sport?.name?.toLowerCase().includes('cricket') || (sport as any)?.scoring_type === 'cricket' || m.score_data?.scoring_type === 'cricket' || m.score_data?.team_a_cricket != null) && (
                               <div className="pt-2">
                                 <button
                                   type="button"

@@ -140,7 +140,22 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
   )
   const [viewingScorecardMatch, setViewingScorecardMatch] = useState<SportMatch | null>(null)
   const [statsOpen, setStatsOpen] = useState(false)
-  const isCricket = sport.name.toLowerCase().includes('cricket')
+  const isCricket =
+    sport.name.toLowerCase().includes('cricket') ||
+    (sport as any).scoring_type === 'cricket' ||
+    sportMatches.some(m =>
+      m.score_data?.scoring_type === 'cricket' ||
+      m.score_data?.team_a_cricket != null ||
+      m.score_data?.team_b_cricket != null ||
+      Boolean((m.score_data as any)?.overs || (m.score_data as any)?.striker_name)
+    )
+
+  const isMatchCricket = (m: SportMatch) =>
+    isCricket ||
+    m.score_data?.scoring_type === 'cricket' ||
+    m.score_data?.team_a_cricket != null ||
+    m.score_data?.team_b_cricket != null ||
+    Boolean((m.score_data as any)?.overs || (m.score_data as any)?.striker_name || (m.score_data as any)?.toss_choice)
 
   return (
     <article className={`overflow-hidden rounded-3xl p-6 shadow-soft ring-1 transition ${done ? 'bg-gradient-to-br from-saffron-soft/50 to-white ring-saffron/50' : 'bg-white/70 ring-sand'}`}>
@@ -166,7 +181,13 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
 
       {/* Live Match Notification Ribbon */}
       {liveMatches.length > 0 && (
-        <div className="mt-4 flex items-center justify-between rounded-2xl bg-red-600 px-4 py-2.5 text-white shadow-md">
+        <div
+          onClick={() => isMatchCricket(liveMatches[0]) ? setViewingScorecardMatch(liveMatches[0]) : undefined}
+          className={`mt-4 flex items-center justify-between rounded-2xl bg-red-600 px-4 py-2.5 text-white shadow-md ${
+            isMatchCricket(liveMatches[0]) ? 'cursor-pointer hover:bg-red-700 transition' : ''
+          }`}
+          title={isMatchCricket(liveMatches[0]) ? 'Click to open Live Cricket Scorecard' : undefined}
+        >
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
             <span className="h-2.5 w-2.5 rounded-full bg-white animate-ping" />
             <span>Live Now: {liveMatches[0].round_name}</span>
@@ -174,6 +195,7 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
           <span className="text-xs font-medium">
             {teamName(liveMatches[0].team_a_id ?? '')?.name ?? 'TBD'} vs{' '}
             {teamName(liveMatches[0].team_b_id ?? '')?.name ?? 'TBD'}
+            {isMatchCricket(liveMatches[0]) && ' · View Scorecard ↗'}
           </span>
         </div>
       )}
@@ -257,9 +279,9 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
             return (
               <div
                 key={m.id}
-                onClick={() => isCricket ? setViewingScorecardMatch(m) : undefined}
+                onClick={() => isMatchCricket(m) ? setViewingScorecardMatch(m) : undefined}
                 className={`rounded-2xl border p-4 transition group ${
-                  isCricket ? 'cursor-pointer hover:shadow-md hover:border-saffron/70 hover:bg-cream/60' : ''
+                  isMatchCricket(m) ? 'cursor-pointer hover:shadow-md hover:border-saffron/70 hover:bg-cream/60' : ''
                 } ${
                   m.status === 'live'
                     ? 'border-red-400 bg-red-50/50 ring-1 ring-red-400'
@@ -271,7 +293,7 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
                 <div className="flex items-center justify-between text-[11px] text-bark-soft pb-2 border-b border-sand/40">
                   <span className="font-semibold text-bark flex items-center gap-2">
                     Match #{m.match_number} · {m.round_name}
-                    {isCricket && (
+                    {isMatchCricket(m) && (
                       <span className="rounded-full bg-saffron-soft/70 px-2 py-0.5 text-[9px] font-bold text-bark group-hover:bg-saffron group-hover:text-ivory transition">
                         📊 Scorecard ↗
                       </span>
@@ -375,7 +397,7 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
                 )}
 
                 {/* Scorecard CTA */}
-                {isCricket && (
+                {isMatchCricket(m) && (
                   <div className="mt-3 pt-2.5 border-t border-sand/40">
                     <button
                       type="button"
