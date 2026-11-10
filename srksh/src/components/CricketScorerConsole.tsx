@@ -3,7 +3,6 @@ import {
   RotateCcw,
   Swords,
   Trophy,
-  ArrowRightLeft,
   UserCheck,
   CheckCircle,
   AlertTriangle,
@@ -48,15 +47,16 @@ export default function CricketScorerConsole({
   const [tossWinner, setTossWinner] = useState(match.team_a_id ?? '')
   const [tossDecision, setTossDecision] = useState<'bat' | 'field'>('bat')
   const [striker, setStriker] = useState('')
-  const [nonStriker, setNonStriker] = useState('')
   const [bowler, setBowler] = useState('')
 
   // Modals inside scorer
   const [wicketModalOpen, setWicketModalOpen] = useState(false)
   const [wicketType, setWicketType] = useState<CricketWicketType>('caught')
-  const [wicketDismissed, setWicketDismissed] = useState<'striker' | 'non_striker'>('striker')
   const [wicketFielder, setWicketFielder] = useState('')
   const [nextBatter, setNextBatter] = useState('')
+
+  const [newBatterModalOpen, setNewBatterModalOpen] = useState(false)
+  const [newBatterName, setNewBatterName] = useState('')
 
   const [newBowlerModalOpen, setNewBowlerModalOpen] = useState(false)
   const [newBowlerName, setNewBowlerName] = useState('')
@@ -80,7 +80,6 @@ export default function CricketScorerConsole({
       if (existing) {
         setCricketMatch(existing as CricketMatch)
         setStriker(existing.striker_name ?? '')
-        setNonStriker(existing.non_striker_name ?? '')
         setBowler(existing.bowler_name ?? '')
         setOversLimit(existing.overs_limit ?? 15)
 
@@ -109,12 +108,8 @@ export default function CricketScorerConsole({
 
   // Setup & Start Match
   async function handleStartMatch() {
-    if (!striker.trim() || !nonStriker.trim() || !bowler.trim()) {
-      toast('error', 'Please enter Striker, Non-Striker, and Opening Bowler.')
-      return
-    }
-    if (striker.trim().toLowerCase() === nonStriker.trim().toLowerCase()) {
-      toast('error', 'Striker and Non-Striker must be different players.')
+    if (!striker.trim() || !bowler.trim()) {
+      toast('error', 'Please enter Opening Batter and Opening Bowler.')
       return
     }
 
@@ -138,7 +133,7 @@ export default function CricketScorerConsole({
             current_innings: 1,
             batting_first_team_id: battingFirst,
             striker_name: striker.trim(),
-            non_striker_name: nonStriker.trim(),
+            non_striker_name: '',
             bowler_name: bowler.trim(),
             status: 'innings1',
           },
@@ -241,7 +236,7 @@ export default function CricketScorerConsole({
         over_number: currentOverNumber,
         ball_in_over: nextLegalBall,
         striker_name: striker.trim(),
-        non_striker_name: nonStriker.trim(),
+        non_striker_name: '',
         bowler_name: bowler.trim(),
         runs_batter: params.runsBatter,
         is_extra: params.isExtra,
@@ -268,43 +263,20 @@ export default function CricketScorerConsole({
       // Calculate new score after this ball
       const newScore = calculateCricketScorecard(updatedDeliveries, currentInningsNum)
 
-      // Strike rotation logic
+      // Update active batter if wicket fell
       let newStriker = striker
-      let newNonStriker = nonStriker
-
-      // 1. If wicket fell, introduce next batter
       if (params.isWicket && params.nextBatterName) {
-        if (params.playerDismissed === nonStriker) {
-          newNonStriker = params.nextBatterName.trim()
-        } else {
-          newStriker = params.nextBatterName.trim()
-        }
+        newStriker = params.nextBatterName.trim()
       }
 
-      // 2. Rotate strike on odd runs (1, 3, or singles off no-ball/bye)
-      const runsToRotate = params.runsBatter + (params.extraType === 'bye' || params.extraType === 'leg_bye' ? params.extraRuns || 0 : 0)
-      if (runsToRotate % 2 !== 0) {
-        const temp = newStriker
-        newStriker = newNonStriker
-        newNonStriker = temp
-      }
-
-      // 3. Over completion check (6 legal balls)
       const overJustCompleted = isLegal && nextLegalBall === 6
-      if (overJustCompleted) {
-        // Strike rotates at end of over
-        const temp = newStriker
-        newStriker = newNonStriker
-        newNonStriker = temp
-      }
 
       setStriker(newStriker)
-      setNonStriker(newNonStriker)
 
       // Sync summary to cricket_matches and sport_matches
       const matchPatch: Partial<CricketMatch> = {
         striker_name: newStriker,
-        non_striker_name: newNonStriker,
+        non_striker_name: '',
         updated_at: new Date().toISOString(),
       }
 
@@ -388,19 +360,23 @@ export default function CricketScorerConsole({
     }
   }
 
-  // Strike Swap button
-  async function handleSwapStrike() {
-    if (!cricketMatch) return
-    const nextStriker = nonStriker
-    const nextNonStriker = striker
-    setStriker(nextStriker)
-    setNonStriker(nextNonStriker)
+  // Change Active Batter
+  async function handleChangeBatter() {
+    if (!newBatterName.trim() || !cricketMatch) return
+    const bName = newBatterName.trim()
+    setStriker(bName)
+    setNewBatterName('')
+    setNewBatterModalOpen(false)
 
-    await supabase
-      .from('cricket_matches')
-      .update({ striker_name: nextStriker, non_striker_name: nextNonStriker })
-      .eq('id', cricketMatch.id)
-    toast('success', `Strike swapped: ${nextStriker} is now on strike.`)
+    try {
+      await supabase
+        .from('cricket_matches')
+        .update({ striker_name: bName, updated_at: new Date().toISOString() })
+        .eq('id', cricketMatch.id)
+      toast('success', `Active batter set to ${bName}`)
+    } catch {
+      // ignore
+    }
   }
 
   // Undo Last Ball
@@ -443,7 +419,6 @@ export default function CricketScorerConsole({
         .eq('id', cricketMatch.id)
 
       setStriker('')
-      setNonStriker('')
       setBowler('')
       setEndInningsConfirm(false)
       toast('success', `Innings 2 Started! Target: ${target} runs.`)
@@ -556,12 +531,12 @@ export default function CricketScorerConsole({
 
           <div className="rounded-2xl border border-sand bg-white p-4 space-y-4">
             <h4 className="font-serif text-base font-semibold text-bark">Opening Lineup</h4>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Striker (Batter 1)">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Opening Batter">
                 <input
                   list="striker-squad"
                   className="input"
-                  placeholder="Select or type name"
+                  placeholder="Select or type batter name"
                   value={striker}
                   onChange={e => setStriker(e.target.value)}
                 />
@@ -573,27 +548,11 @@ export default function CricketScorerConsole({
                 </datalist>
               </Field>
 
-              <Field label="Non-Striker (Batter 2)">
-                <input
-                  list="non-striker-squad"
-                  className="input"
-                  placeholder="Select or type name"
-                  value={nonStriker}
-                  onChange={e => setNonStriker(e.target.value)}
-                />
-                <datalist id="non-striker-squad">
-                  {(tossDecision === 'bat' ? (tossWinner === teamA?.id ? teamA : teamB) : (tossWinner === teamA?.id ? teamB : teamA))
-                    ?.team_members?.map(m => (
-                      <option key={m.id} value={m.name} />
-                    ))}
-                </datalist>
-              </Field>
-
               <Field label="Opening Bowler">
                 <input
                   list="bowler-squad"
                   className="input"
-                  placeholder="Select or type name"
+                  placeholder="Select or type bowler name"
                   value={bowler}
                   onChange={e => setBowler(e.target.value)}
                 />
@@ -698,42 +657,34 @@ export default function CricketScorerConsole({
 
           {/* On-Field Players (Batters & Bowler) */}
           <div className="grid gap-3 sm:grid-cols-2">
-            {/* Batters */}
+            {/* Batter Card */}
             <div className="rounded-2xl border border-sand bg-white p-4">
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-sand/40">
-                <span className="text-xs font-bold uppercase tracking-wider text-bark">Batters</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-bark">Active Batter</span>
                 <button
                   type="button"
                   className="btn-outline btn-sm py-0.5 px-2 text-xs flex items-center gap-1"
-                  onClick={() => void handleSwapStrike()}
-                  title="Swap Strike"
+                  onClick={() => setNewBatterModalOpen(true)}
+                  title="Change Active Batter"
                 >
-                  <ArrowRightLeft className="h-3 w-3" />
-                  Swap Strike
+                  Change Batter
                 </button>
               </div>
 
-              <div className="space-y-2 text-sm">
-                {/* Striker */}
-                <div className="flex items-center justify-between font-bold text-bark bg-saffron-soft/30 p-2 rounded-xl border border-saffron/40">
-                  <span>🏏 {striker || 'Striker'} *</span>
-                  <span className="font-serif text-terracotta-deep">
-                    {scorecard.batting.find(b => b.name === striker)?.runs ?? 0} (
-                    {scorecard.batting.find(b => b.name === striker)?.balls ?? 0}b)
-                  </span>
-                </div>
-                {/* Non-Striker */}
-                <div className="flex items-center justify-between text-bark p-2">
-                  <span>{nonStriker || 'Non-Striker'}</span>
-                  <span className="font-serif text-bark-soft">
-                    {scorecard.batting.find(b => b.name === nonStriker)?.runs ?? 0} (
-                    {scorecard.batting.find(b => b.name === nonStriker)?.balls ?? 0}b)
-                  </span>
-                </div>
+              <div className="flex items-center justify-between font-bold text-bark bg-saffron-soft/30 p-2.5 rounded-xl border border-saffron/40">
+                <span className="text-sm">🏏 {striker || 'Batter'}</span>
+                {(() => {
+                  const bt = scorecard.batting.find(b => b.name === striker)
+                  return (
+                    <span className="font-serif text-terracotta-deep text-sm">
+                      {bt ? `${bt.runs} runs (${bt.balls}b · ${bt.fours}x4 · ${bt.sixes}x6 · SR: ${bt.strikeRate})` : '0 (0b)'}
+                    </span>
+                  )
+                })()}
               </div>
             </div>
 
-            {/* Bowler */}
+            {/* Bowler Card */}
             <div className="rounded-2xl border border-sand bg-white p-4">
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-sand/40">
                 <span className="text-xs font-bold uppercase tracking-wider text-bark">Current Bowler</span>
@@ -746,12 +697,12 @@ export default function CricketScorerConsole({
                 </button>
               </div>
 
-              <div className="flex items-center justify-between p-2 font-bold text-bark">
-                <span>🎯 {bowler || 'Bowler'}</span>
+              <div className="flex items-center justify-between p-2.5 font-bold text-bark">
+                <span className="text-sm">🎯 {bowler || 'Bowler'}</span>
                 {(() => {
                   const bw = scorecard.bowling.find(b => b.name === bowler)
                   return (
-                    <span className="font-serif text-terracotta-deep">
+                    <span className="font-serif text-terracotta-deep text-sm">
                       {bw ? `${bw.overs} ov · ${bw.maidens}m · ${bw.runs}r · ${bw.wickets}w` : '0.0 ov'}
                     </span>
                   )
@@ -873,7 +824,6 @@ export default function CricketScorerConsole({
                 disabled={busy}
                 className="rounded-2xl bg-red-600 py-3.5 text-base font-bold text-white shadow hover:bg-red-700 active:scale-95 transition"
                 onClick={() => {
-                  setWicketDismissed('striker')
                   setNextBatter('')
                   setWicketFielder('')
                   setWicketModalOpen(true)
@@ -943,31 +893,6 @@ export default function CricketScorerConsole({
             </select>
           </Field>
 
-          {wicketType === 'run_out' && (
-            <Field label="Who was run out?">
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm font-semibold">
-                  <input
-                    type="radio"
-                    name="runout"
-                    checked={wicketDismissed === 'striker'}
-                    onChange={() => setWicketDismissed('striker')}
-                  />
-                  Striker ({striker})
-                </label>
-                <label className="flex items-center gap-2 text-sm font-semibold">
-                  <input
-                    type="radio"
-                    name="runout"
-                    checked={wicketDismissed === 'non_striker'}
-                    onChange={() => setWicketDismissed('non_striker')}
-                  />
-                  Non-Striker ({nonStriker})
-                </label>
-              </div>
-            </Field>
-          )}
-
           {(wicketType === 'caught' || wicketType === 'run_out' || wicketType === 'stumped') && (
             <Field label="Fielder / Wicketkeeper (optional)">
               <input
@@ -1014,13 +939,51 @@ export default function CricketScorerConsole({
                   isExtra: false,
                   isWicket: true,
                   wicketType,
-                  playerDismissed: wicketDismissed === 'striker' ? striker : nonStriker,
+                  playerDismissed: striker,
                   fielderName: wicketFielder,
                   nextBatterName: nextBatter,
                 })
               }}
             >
               Confirm Wicket
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* CHANGE ACTIVE BATTER MODAL */}
+      <Modal
+        open={newBatterModalOpen}
+        onClose={() => setNewBatterModalOpen(false)}
+        title="Select Active Batter"
+      >
+        <div className="space-y-4">
+          <Field label="Batter Name">
+            <input
+              list="change-batter-list"
+              className="input"
+              placeholder="Select or enter batter name"
+              value={newBatterName}
+              onChange={e => setNewBatterName(e.target.value)}
+              autoFocus
+            />
+            <datalist id="change-batter-list">
+              {battingSquad.map(name => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          </Field>
+          <div className="flex justify-end gap-3 pt-3 border-t border-sand">
+            <button type="button" className="btn-outline" onClick={() => setNewBatterModalOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleChangeBatter()}
+              disabled={!newBatterName.trim()}
+            >
+              Set Batter
             </button>
           </div>
         </div>

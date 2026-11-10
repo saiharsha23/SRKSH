@@ -254,24 +254,21 @@ export default function CricketLiveScorecard({
             )}
           </div>
 
-          {/* Current Batters & Bowler On Field */}
+          {/* Current Batter & Bowler On Field */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-sand bg-white p-3.5">
               <span className="text-xs font-bold uppercase tracking-wider text-bark">Batting</span>
-              <div className="mt-2 space-y-1.5 text-sm">
-                <div className="flex justify-between font-bold text-bark bg-saffron-soft/20 px-2 py-1 rounded-lg">
-                  <span>🏏 {cricketMatch.striker_name || 'Striker'} *</span>
-                  <span className="font-serif text-terracotta-deep">
-                    {currentScorecard.batting.find(b => b.name === cricketMatch.striker_name)?.runs ?? 0} (
-                    {currentScorecard.batting.find(b => b.name === cricketMatch.striker_name)?.balls ?? 0}b)
-                  </span>
-                </div>
-                <div className="flex justify-between text-bark px-2 py-1">
-                  <span>{cricketMatch.non_striker_name || 'Non-Striker'}</span>
-                  <span className="font-serif text-bark-soft">
-                    {currentScorecard.batting.find(b => b.name === cricketMatch.non_striker_name)?.runs ?? 0} (
-                    {currentScorecard.batting.find(b => b.name === cricketMatch.non_striker_name)?.balls ?? 0}b)
-                  </span>
+              <div className="mt-2 text-sm">
+                <div className="flex items-center justify-between font-bold text-bark bg-saffron-soft/20 px-2.5 py-1.5 rounded-lg">
+                  <span>🏏 {cricketMatch.striker_name || 'Batter'}</span>
+                  {(() => {
+                    const bt = currentScorecard.batting.find(b => b.name === cricketMatch.striker_name)
+                    return (
+                      <span className="font-serif text-terracotta-deep">
+                        {bt ? `${bt.runs} (${bt.balls}b · ${bt.fours}x4 · ${bt.sixes}x6 · SR: ${bt.strikeRate})` : '0 (0b)'}
+                      </span>
+                    )
+                  })()}
                 </div>
               </div>
             </div>

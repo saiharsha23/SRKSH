@@ -548,3 +548,4 @@ export default function CricketChartsAndAnalytics({
     </div>
   )
 }
+

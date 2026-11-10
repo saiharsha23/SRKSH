@@ -72,8 +72,8 @@ export function calculateCricketScorecard(
         isNotOut: true,
       })
     }
-    // Also track non-striker in case they haven't faced a ball yet
-    if (!battingMap.has(b.non_striker_name)) {
+    // Also track non-striker if provided
+    if (b.non_striker_name && b.non_striker_name.trim() !== '' && !battingMap.has(b.non_striker_name)) {
       battingMap.set(b.non_striker_name, {
         name: b.non_striker_name,
         runs: 0,
@@ -297,7 +297,7 @@ export function generateAutoCommentary(d: {
   }
   if (runs === 3) return `Good running between the wickets! ${striker} pushes it into the deep and they sprint back for three.`
   if (runs === 2) return `Worked away into the gap, easy two runs taken.`
-  if (runs === 1) return `Tapped into the covers for a single, rotating the strike.`
+  if (runs === 1) return `Tapped into the covers for a quick single.`
   return `No run. Solid defensive block from ${striker} off ${bowler}.`
 }
 
