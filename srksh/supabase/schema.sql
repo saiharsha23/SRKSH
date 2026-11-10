@@ -155,6 +155,26 @@ create table if not exists public.result_placements (
   unique (result_id, placement)   -- one winner/contestant per placement position
 );
 
+create table if not exists public.sport_matches (
+  id uuid primary key default gen_random_uuid(),
+  sport_id uuid not null references public.sports(id) on delete cascade,
+  team_a_id uuid references public.teams(id) on delete set null,
+  team_b_id uuid references public.teams(id) on delete set null,
+  round_name text not null default 'Match',
+  match_number int not null default 1,
+  scheduled_date text,
+  scheduled_time text,
+  venue text,
+  status text not null default 'scheduled' check (status in ('scheduled', 'live', 'completed', 'cancelled')),
+  winner_team_id uuid references public.teams(id) on delete set null,
+  score_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists idx_sport_matches_sport_id on public.sport_matches(sport_id);
+create index if not exists idx_sport_matches_teams on public.sport_matches(team_a_id, team_b_id);
+
 -- A placed team must be a participant of that sport
 create or replace function public.check_placement_participant()
 returns trigger language plpgsql as $$
@@ -267,7 +287,7 @@ declare t text;
 begin
   foreach t in array array[
     'site_settings','about_images','gallery_images','hpl_editions','teams','team_members',
-    'sports','sport_teams','sport_participants','sport_results','result_placements'
+    'sports','sport_teams','sport_participants','sport_results','result_placements','sport_matches'
   ] loop
     execute format('drop policy if exists "public read" on public.%I', t);
     execute format('create policy "public read" on public.%I for select using (true)', t);

@@ -11,6 +11,7 @@ import {
   Clock,
   ExternalLink,
   LogOut,
+  MapPin,
   Plus,
   Search,
   Shield,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react'
 import { useHpl } from '../../lib/data'
 import { useLeaderAuth } from '../../lib/leaderAuth'
+import { formatMatchScoreDisplay } from '../../lib/tournament'
 import { imageUrl } from '../../lib/supabase'
 import type { Sport, Team, Member } from '../../types'
 import {
@@ -1035,6 +1037,127 @@ export default function LeaderPortal() {
                   </div>
                 ) : (
                   <p className="mt-4 text-sm text-bark-soft">No completed results yet.</p>
+                )}
+              </div>
+
+              {/* Team's Scheduled Matches */}
+              <div className="card lg:col-span-3">
+                <div className="flex items-center justify-between pb-2 border-b border-sand/60">
+                  <h3 className="font-serif text-lg font-bold flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-terracotta" />
+                    Your Team's Match Schedule
+                  </h3>
+                  <span className="text-xs text-bark-soft">
+                    {
+                      bundle.matches.filter(
+                        m => m.team_a_id === currentTeam.id || m.team_b_id === currentTeam.id
+                      ).length
+                    }{' '}
+                    matches
+                  </span>
+                </div>
+
+                {bundle.matches.filter(
+                  m => m.team_a_id === currentTeam.id || m.team_b_id === currentTeam.id
+                ).length === 0 ? (
+                  <p className="mt-4 text-sm text-bark-soft">
+                    No matches scheduled for your team yet. Fixtures will appear here once announced.
+                  </p>
+                ) : (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {bundle.matches
+                      .filter(m => m.team_a_id === currentTeam.id || m.team_b_id === currentTeam.id)
+                      .map(m => {
+                        const sport = bundle.sports.find(s => s.id === m.sport_id)
+                        const isTeamA = m.team_a_id === currentTeam.id
+                        const oppId = isTeamA ? m.team_b_id : m.team_a_id
+                        const opp = data.teams.find(t => t.id === oppId)
+                        const scoreDisplay = formatMatchScoreDisplay(
+                          m,
+                          isTeamA ? currentTeam : opp,
+                          isTeamA ? opp : currentTeam
+                        )
+
+                        return (
+                          <div
+                            key={m.id}
+                            className={`rounded-2xl border p-4 shadow-soft transition ${
+                              m.status === 'live'
+                                ? 'border-red-400 bg-red-50/50 ring-1 ring-red-400'
+                                : m.status === 'completed'
+                                ? 'border-sand bg-white'
+                                : 'border-sand/60 bg-cream/30'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs text-bark-soft pb-2 border-b border-sand/40">
+                              <span className="font-semibold text-bark">
+                                {sport?.name ?? 'Sport'} · {m.round_name}
+                              </span>
+                              {m.status === 'live' && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase animate-pulse">
+                                  🔴 Live
+                                </span>
+                              )}
+                              {m.status === 'completed' && (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 uppercase">
+                                  Final
+                                </span>
+                              )}
+                              {m.status === 'scheduled' && (
+                                <span className="rounded-full bg-sand px-2 py-0.5 text-[10px] font-medium text-bark uppercase">
+                                  Scheduled
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="my-2">
+                              <p className="text-xs text-bark-soft">Opponent:</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <ColourDot colour={opp?.colour} />
+                                <span className="font-serif text-base font-bold text-bark">
+                                  {opp?.name ?? 'TBD'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {(scoreDisplay.aScore || scoreDisplay.bScore || scoreDisplay.summary) && (
+                              <div className="rounded-xl bg-sand/30 p-2 text-xs mb-2">
+                                <div className="flex justify-between font-semibold">
+                                  <span>Your Score: {isTeamA ? scoreDisplay.aScore : scoreDisplay.bScore || '—'}</span>
+                                  <span>Opponent: {isTeamA ? scoreDisplay.bScore : scoreDisplay.aScore || '—'}</span>
+                                </div>
+                                {scoreDisplay.summary && (
+                                  <p className="text-[11px] text-bark mt-1">{scoreDisplay.summary}</p>
+                                )}
+                              </div>
+                            )}
+
+                            {(m.scheduled_date || m.scheduled_time || m.venue) && (
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-bark-soft pt-1">
+                                {m.scheduled_date && (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {m.scheduled_date}
+                                  </span>
+                                )}
+                                {m.scheduled_time && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    {m.scheduled_time}
+                                  </span>
+                                )}
+                                {m.venue && (
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="h-3 w-3" />
+                                    {m.venue}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
                 )}
               </div>
 

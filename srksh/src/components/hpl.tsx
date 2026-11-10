@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ChevronDown, Clock, Crown, Medal, Users } from 'lucide-react'
+import { Calendar, ChevronDown, Clock, Crown, MapPin, Medal, Trophy, Users } from 'lucide-react'
 import type { LeaderRow, Participant, Placement, Sport, SportResult, SportTeam, Team } from '../types'
 import type { SportBundle } from '../lib/data'
 import { imageUrl } from '../lib/supabase'
 import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal } from '../lib/format'
 import { Badge, ColourDot, EmptyState, Img } from './ui'
+import { formatMatchScoreDisplay } from '../lib/tournament'
 
 export function TeamCard({ team, row }: { team: Team; row?: LeaderRow }) {
   const [open, setOpen] = useState(false)
@@ -68,6 +69,15 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
   const placements: Placement[] = result ? bundle.placements.filter(p => p.result_id === result.id).sort((a, b) => a.placement - b.placement) : []
   const done = result?.status === 'completed' && placements.length > 0
   const img = imageUrl(sport.image_path)
+
+  const sportMatches = (bundle.matches ?? [])
+    .filter(m => m.sport_id === sport.id)
+    .sort((a, b) => a.match_number - b.match_number)
+  const liveMatches = sportMatches.filter(m => m.status === 'live')
+  const [tab, setTab] = useState<'matches' | 'result'>(
+    sportMatches.length > 0 && !done ? 'matches' : 'result'
+  )
+
   return (
     <article className={`overflow-hidden rounded-3xl p-6 shadow-soft ring-1 transition ${done ? 'bg-gradient-to-br from-saffron-soft/50 to-white ring-saffron/50' : 'bg-white/70 ring-sand'}`}>
       <header className="flex items-start gap-4">
@@ -76,15 +86,34 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
           <h3 className="text-3xl font-semibold">{sport.name}</h3>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <p className="text-xs uppercase tracking-wider text-bark-soft">{sport.category || 'Sport'}</p>
-            {sport.game_type === 'individual' && (
+            {sport.game_type === 'individual' ? (
               <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-[10px] font-bold text-saffron-deep">
                 👤 Individual Game {sport.max_participants ? `(Max ${sport.max_participants} per team)` : ''}
+              </span>
+            ) : (
+              <span className="rounded-full bg-sand/60 px-2.5 py-0.5 text-[10px] font-bold text-bark">
+                👥 Team Sport {sportMatches.length > 0 ? `· ${sportMatches.length} matches` : ''}
               </span>
             )}
           </div>
         </div>
         <Badge status={sport.status} />
       </header>
+
+      {/* Live Match Notification Ribbon */}
+      {liveMatches.length > 0 && (
+        <div className="mt-4 flex items-center justify-between rounded-2xl bg-red-600 px-4 py-2.5 text-white shadow-md">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+            <span className="h-2.5 w-2.5 rounded-full bg-white animate-ping" />
+            <span>Live Now: {liveMatches[0].round_name}</span>
+          </div>
+          <span className="text-xs font-medium">
+            {teamName(liveMatches[0].team_a_id ?? '')?.name ?? 'TBD'} vs{' '}
+            {teamName(liveMatches[0].team_b_id ?? '')?.name ?? 'TBD'}
+          </span>
+        </div>
+      )}
+
       {sport.description && <p className="mt-3 text-sm text-bark-soft">{sport.description}</p>}
 
       {sport.registration_deadline && (
@@ -100,34 +129,189 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
         </div>
       )}
 
-      <div className="mt-5 rounded-2xl bg-ivory/80 p-4 ring-1 ring-sand">
-        {done ? (
-          <ul className="space-y-2">
-            {placements.map(p => {
-              const t = teamName(p.team_id)
-              return (
-                <li key={p.id} className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2 font-medium">
-                    <Medal className={`h-5 w-5 ${p.placement === 1 ? 'text-gold' : p.placement === 2 ? 'text-gray-400' : 'text-[#A8683A]'}`} />
-                    <span className="text-xs uppercase tracking-wide text-bark-soft">{p.placement === 1 ? 'Winner' : p.placement === 2 ? 'Runner-up' : ordinal(p.placement)}</span>
-                    <ColourDot colour={t?.colour} />
-                    <span>{t?.name ?? 'Unknown team'}</span>
-                    {p.player_name && (
-                      <span className="rounded-full bg-sand/60 px-2 py-0.5 text-xs text-bark font-semibold">
-                        👤 {p.player_name}
+      {/* Segmented View Switcher if matches exist */}
+      {sportMatches.length > 0 && (
+        <div className="mt-5 flex gap-2 border-b border-sand pb-2">
+          <button
+            type="button"
+            className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${
+              tab === 'matches'
+                ? 'bg-bark text-ivory'
+                : 'bg-sand/40 text-bark hover:bg-sand/70'
+            }`}
+            onClick={() => setTab('matches')}
+          >
+            📅 Matches & Schedule ({sportMatches.length})
+          </button>
+          <button
+            type="button"
+            className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${
+              tab === 'result'
+                ? 'bg-bark text-ivory'
+                : 'bg-sand/40 text-bark hover:bg-sand/70'
+            }`}
+            onClick={() => setTab('result')}
+          >
+            🏆 {done ? 'Final Placements' : 'Results & Standings'}
+          </button>
+        </div>
+      )}
+
+      {/* MATCHES VIEW */}
+      {sportMatches.length > 0 && tab === 'matches' ? (
+        <div className="mt-4 space-y-3">
+          {sportMatches.map(m => {
+            const teamA = teamName(m.team_a_id ?? '')
+            const teamB = teamName(m.team_b_id ?? '')
+            const sc = formatMatchScoreDisplay(m, teamA, teamB)
+
+            return (
+              <div
+                key={m.id}
+                className={`rounded-2xl border p-3.5 transition ${
+                  m.status === 'live'
+                    ? 'border-red-400 bg-red-50/50 ring-1 ring-red-400'
+                    : m.status === 'completed'
+                    ? 'border-sand bg-white/80'
+                    : 'border-sand/60 bg-cream/40'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[11px] text-bark-soft pb-2 border-b border-sand/40">
+                  <span className="font-semibold text-bark">
+                    Match #{m.match_number} · {m.round_name}
+                  </span>
+                  <div>
+                    {m.status === 'live' && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase animate-pulse">
+                        🔴 Live
                       </span>
                     )}
-                  </span>
-                  <span className="font-serif text-xl font-bold text-terracotta-deep">{p.points == null ? '—' : `${fmtPoints(p.points)} pts`}</span>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="text-sm font-medium text-bark-soft">Result: <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold">Pending</span></p>
-        )}
-      </div>
+                    {m.status === 'completed' && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 uppercase">
+                        ✅ Final
+                      </span>
+                    )}
+                    {m.status === 'scheduled' && (
+                      <span className="rounded-full bg-sand px-2 py-0.5 text-[10px] font-medium text-bark uppercase">
+                        ⏳ Scheduled
+                      </span>
+                    )}
+                  </div>
+                </div>
 
+                {/* Matchup */}
+                <div className="my-2 space-y-1.5 text-sm">
+                  <div
+                    className={`flex items-center justify-between rounded-lg px-2 py-1 ${
+                      m.winner_team_id && m.winner_team_id === teamA?.id
+                        ? 'bg-gold/15 font-bold text-bark'
+                        : 'text-bark'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ColourDot colour={teamA?.colour} />
+                      <span>{teamA?.name ?? (m.score_data?.notes ? m.score_data.notes.split(' vs ')[0] : 'TBD')}</span>
+                      {m.winner_team_id && m.winner_team_id === teamA?.id && (
+                        <Trophy className="h-3.5 w-3.5 text-gold shrink-0" />
+                      )}
+                    </div>
+                    <span className="font-serif font-bold text-terracotta-deep">
+                      {sc.aScore || '—'}
+                    </span>
+                  </div>
+
+                  <div
+                    className={`flex items-center justify-between rounded-lg px-2 py-1 ${
+                      m.winner_team_id && m.winner_team_id === teamB?.id
+                        ? 'bg-gold/15 font-bold text-bark'
+                        : 'text-bark'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ColourDot colour={teamB?.colour} />
+                      <span>{teamB?.name ?? (m.score_data?.notes ? m.score_data.notes.split(' vs ')[1] : 'TBD')}</span>
+                      {m.winner_team_id && m.winner_team_id === teamB?.id && (
+                        <Trophy className="h-3.5 w-3.5 text-gold shrink-0" />
+                      )}
+                    </div>
+                    <span className="font-serif font-bold text-terracotta-deep">
+                      {sc.bScore || '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Summary / Notes */}
+                {(sc.summary || sc.tossText || sc.playerOfMatch || m.venue || m.scheduled_date || m.scheduled_time) && (
+                  <div className="mt-2 pt-2 border-t border-sand/40 text-xs text-bark-soft space-y-0.5">
+                    {sc.summary && (
+                      <p className="font-semibold text-bark">{sc.summary}</p>
+                    )}
+                    {sc.tossText && <p className="text-[11px] text-bark-faint">🪙 {sc.tossText}</p>}
+                    {sc.playerOfMatch && (
+                      <p className="text-[11px] text-saffron-deep font-semibold">
+                        ⭐ Player of the Match: {sc.playerOfMatch}
+                      </p>
+                    )}
+                    {(m.scheduled_date || m.scheduled_time || m.venue) && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-bark-faint">
+                        {m.scheduled_date && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {m.scheduled_date}
+                          </span>
+                        )}
+                        {m.scheduled_time && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {m.scheduled_time}
+                          </span>
+                        )}
+                        {m.venue && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {m.venue}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        /* RESULT & PLACEMENTS VIEW */
+        <div className="mt-5 rounded-2xl bg-ivory/80 p-4 ring-1 ring-sand">
+          {done ? (
+            <ul className="space-y-2">
+              {placements.map(p => {
+                const t = teamName(p.team_id)
+                return (
+                  <li key={p.id} className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 font-medium">
+                      <Medal className={`h-5 w-5 ${p.placement === 1 ? 'text-gold' : p.placement === 2 ? 'text-gray-400' : 'text-[#A8683A]'}`} />
+                      <span className="text-xs uppercase tracking-wide text-bark-soft">{p.placement === 1 ? 'Winner' : p.placement === 2 ? 'Runner-up' : ordinal(p.placement)}</span>
+                      <ColourDot colour={t?.colour} />
+                      <span>{t?.name ?? 'Unknown team'}</span>
+                      {p.player_name && (
+                        <span className="rounded-full bg-sand/60 px-2 py-0.5 text-xs text-bark font-semibold">
+                          👤 {p.player_name}
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-serif text-xl font-bold text-terracotta-deep">{p.points == null ? '—' : `${fmtPoints(p.points)} pts`}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm font-medium text-bark-soft">Result: <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold">Pending</span></p>
+          )}
+        </div>
+      )}
+
+      {/* Team squad collapsible */}
       <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="mt-4 flex w-full items-center justify-between text-sm font-medium text-terracotta-deep">
         <span className="flex items-center gap-2">
           <Users className="h-4 w-4" />

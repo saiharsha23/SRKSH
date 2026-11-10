@@ -8,6 +8,7 @@ import { Badge, ConfirmDialog, EmptyState, ErrorBox, Img, Modal, Spinner, useToa
 import { Field, ImageField, PageTitle, errMsg } from './common'
 import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal, toLocalIso } from '../../lib/format'
 import WhatsAppBroadcastModal from '../../components/WhatsAppBroadcastModal'
+import MatchScheduleManager from '../../components/MatchScheduleManager'
 
 /* ---------- Sport create / edit form ---------- */
 function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null; editionId: string; onClose: () => void; onSaved: (id: string, isNew: boolean, sportData: Sport) => void }) {
@@ -1035,6 +1036,17 @@ export function SportDetail() {
           </div>
         )}
       </section>
+
+      {sport.game_type !== 'individual' && (
+        <section className="card mb-8">
+          <MatchScheduleManager
+            sport={sport}
+            teams={teams}
+            bundle={bundle}
+            onChanged={reload}
+          />
+        </section>
+      )}
 
       <section className="card">
         <h2 className="mb-1 text-2xl font-semibold">Results and points</h2>

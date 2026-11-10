@@ -70,3 +70,4 @@ end $$;
 grant execute on function public.save_sport_result(uuid, text, text, jsonb) to authenticated;
 
 notify pgrst, 'reload schema';
+

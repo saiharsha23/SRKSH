@@ -21,6 +21,50 @@ export interface SportTeam { sport_id: string; team_id: string }
 export interface Participant { id: string; sport_id: string; team_id: string; member_id: string | null; player_name: string; is_manual: boolean; sort_order?: number; created_at?: string }
 export interface SportResult { id: string; sport_id: string; status: 'pending' | 'completed'; notes: string | null }
 export interface Placement { id: string; result_id: string; team_id: string; placement: number; points: number | null; player_name?: string | null }
+
+export type MatchStatus = 'scheduled' | 'live' | 'completed' | 'cancelled'
+export type ScoringType = 'cricket' | 'football' | 'sets' | 'points' | 'custom'
+
+export interface MatchScoreData {
+  scoring_type?: ScoringType
+  // Cricket
+  toss_winner_team_id?: string | null
+  toss_decision?: 'bat' | 'field' | null
+  team_a_cricket?: { runs: number | string; wickets: number | string; overs: number | string }
+  team_b_cricket?: { runs: number | string; wickets: number | string; overs: number | string }
+  // Football / Hockey
+  team_a_goals?: number | string
+  team_b_goals?: number | string
+  penalty_shootout?: { team_a: number | string; team_b: number | string } | null
+  // Sets (Volleyball, Badminton, TT)
+  team_a_sets?: number | string
+  team_b_sets?: number | string
+  set_scores?: string[]
+  // Points / Raids (Kabaddi, Basketball, Tug of war)
+  team_a_points?: number | string
+  team_b_points?: number | string
+  // Common
+  result_summary?: string | null
+  player_of_match?: string | null
+  notes?: string | null
+}
+
+export interface SportMatch {
+  id: string
+  sport_id: string
+  team_a_id: string | null
+  team_b_id: string | null
+  round_name: string
+  match_number: number
+  scheduled_date: string | null
+  scheduled_time: string | null
+  venue: string | null
+  status: MatchStatus
+  winner_team_id: string | null
+  score_data: MatchScoreData
+  created_at?: string
+  updated_at?: string
+}
 export interface LeaderRow {
   team_id: string; edition_id: string; team_name: string; colour: string | null; logo_path: string | null
   captain_name: string; captain_photo_path: string | null

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase, isConfigured } from './supabase'
 import type {
   Edition, Team, Sport, SportTeam, Participant, SportResult, Placement, LeaderRow,
-  GalleryImage, AboutImage, SiteSettings,
+  GalleryImage, AboutImage, SiteSettings, SportMatch,
 } from '../types'
 
 /** Generic loader: always reads the latest saved data from Supabase. */
@@ -45,19 +45,21 @@ export async function getLeaderboard(editionId: string) {
     .order('rank').order('team_name')) as LeaderRow[]
 }
 export interface SportBundle {
-  sports: Sport[]; sportTeams: SportTeam[]; participants: Participant[]; results: SportResult[]; placements: Placement[]
+  sports: Sport[]; sportTeams: SportTeam[]; participants: Participant[]; results: SportResult[]; placements: Placement[]; matches: SportMatch[]
 }
 export async function getSportBundle(editionId: string): Promise<SportBundle> {
   const sports = must(await supabase.from('sports').select('*').eq('edition_id', editionId).order('created_at')) as Sport[]
   const ids = sports.map(s => s.id)
-  if (!ids.length) return { sports, sportTeams: [], participants: [], results: [], placements: [] }
-  const [st, pa, re] = await Promise.all([
+  if (!ids.length) return { sports, sportTeams: [], participants: [], results: [], placements: [], matches: [] }
+  const [st, pa, re, ma] = await Promise.all([
     supabase.from('sport_teams').select('*').in('sport_id', ids),
     supabase.from('sport_participants').select('*').in('sport_id', ids).order('created_at', { ascending: true }),
     supabase.from('sport_results').select('*').in('sport_id', ids),
+    supabase.from('sport_matches').select('*').in('sport_id', ids).order('match_number', { ascending: true }),
   ])
   const results = must(re) as SportResult[]
   const rawParticipants = must(pa) as Participant[]
+  const matches = (ma.data ?? []) as SportMatch[]
   const participants = rawParticipants.sort((a, b) => {
     if (a.sort_order != null && b.sort_order != null && a.sort_order !== b.sort_order) {
       return a.sort_order - b.sort_order
@@ -70,7 +72,7 @@ export async function getSportBundle(editionId: string): Promise<SportBundle> {
   if (results.length) {
     placements = must(await supabase.from('result_placements').select('*').in('result_id', results.map(r => r.id)).order('placement')) as Placement[]
   }
-  return { sports, sportTeams: must(st) as SportTeam[], participants, results, placements }
+  return { sports, sportTeams: must(st) as SportTeam[], participants, results, placements, matches }
 }
 export async function getGallery() {
   try {
@@ -96,8 +98,8 @@ export async function getSettings() {
 export function useHpl() {
   return useQuery(async () => {
     const edition = await getCurrentEdition()
-    if (!edition) return { edition: null as Edition | null, teams: [] as Team[], leaderboard: [] as LeaderRow[], bundle: { sports: [], sportTeams: [], participants: [], results: [], placements: [] } as SportBundle }
+    if (!edition) return { edition: null as Edition | null, teams: [] as Team[], leaderboard: [] as LeaderRow[], bundle: { sports: [], sportTeams: [], participants: [], results: [], placements: [], matches: [] } as SportBundle }
     const [teams, leaderboard, bundle] = await Promise.all([getTeams(edition.id), getLeaderboard(edition.id), getSportBundle(edition.id)])
     return { edition, teams, leaderboard, bundle }
-  }, { edition: null as Edition | null, teams: [] as Team[], leaderboard: [] as LeaderRow[], bundle: { sports: [], sportTeams: [], participants: [], results: [], placements: [] } as SportBundle }, [])
+  }, { edition: null as Edition | null, teams: [] as Team[], leaderboard: [] as LeaderRow[], bundle: { sports: [], sportTeams: [], participants: [], results: [], placements: [], matches: [] } as SportBundle }, [])
 }
