@@ -55,7 +55,25 @@ function SquadModal({
 }) {
   const toast = useToast()
   const { saveSquad } = useLeaderAuth()
-  const roster = team.team_members ?? []
+  const isIndividual = sport.game_type === 'individual'
+  const maxLimit = isIndividual ? (sport.max_participants ?? 1) : null
+
+  const rawRoster = team.team_members ?? []
+  const hasCaptain = rawRoster.some(m => m.name.trim().toLowerCase() === team.captain_name.trim().toLowerCase())
+  const roster = useMemo(() => {
+    if (hasCaptain) return rawRoster
+    return [
+      {
+        id: 'captain',
+        team_id: team.id,
+        name: team.captain_name,
+        photo_path: team.captain_photo_path,
+        sort_order: -1,
+      },
+      ...rawRoster,
+    ]
+  }, [rawRoster, hasCaptain, team.id, team.captain_name, team.captain_photo_path])
+
   const deadlinePassed = isDeadlinePassed(sport.registration_deadline)
 
   // Keep ordered array of selected member IDs in exact selection order
@@ -66,20 +84,35 @@ function SquadModal({
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
-  // STABLE roster order: does NOT re-sort when items are clicked so rows never jump!
+  // STABLE roster order: Leader/Captain is placed FIRST at the top!
   const stableRoster = useMemo(() => {
     const q = query.trim().toLowerCase()
     const pool = q ? roster.filter(m => m.name.toLowerCase().includes(q)) : [...roster]
-    return pool.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
-  }, [roster, query])
+    const capName = team.captain_name.trim().toLowerCase()
+    return pool.sort((a, b) => {
+      const aIsCap = a.name.trim().toLowerCase() === capName
+      const bIsCap = b.name.trim().toLowerCase() === capName
+      if (aIsCap && !bIsCap) return -1
+      if (!aIsCap && bIsCap) return 1
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)
+    })
+  }, [roster, query, team.captain_name])
 
   function toggleMember(id: string) {
     if (deadlinePassed) return
+    setError('')
     setSelectedIds(prev => {
       if (prev.includes(id)) {
         return prev.filter(x => x !== id)
       } else {
-        return [...prev, id] // added to end in exact order of selection
+        if (maxLimit === 1) {
+          return [id]
+        }
+        if (maxLimit !== null && prev.length >= maxLimit) {
+          setError(`Maximum ${maxLimit} participant${maxLimit === 1 ? '' : 's'} allowed for this individual game.`)
+          return prev
+        }
+        return [...prev, id]
       }
     })
   }
@@ -99,6 +132,11 @@ function SquadModal({
 
   function selectAll() {
     if (deadlinePassed) return
+    if (isIndividual && maxLimit) {
+      const toAdd = stableRoster.slice(0, maxLimit).map(m => m.id)
+      setSelectedIds(toAdd)
+      return
+    }
     const existing = new Set(selectedIds)
     const toAdd = stableRoster.filter(m => !existing.has(m.id)).map(m => m.id)
     setSelectedIds([...selectedIds, ...toAdd])
@@ -114,11 +152,20 @@ function SquadModal({
       setError('The registration deadline for this sport has passed. You cannot modify the squad.')
       return
     }
+    if (maxLimit !== null && selectedIds.length > maxLimit) {
+      setError(`Maximum ${maxLimit} participant${maxLimit === 1 ? '' : 's'} allowed for this individual game.`)
+      return
+    }
     setError('')
     setSaving(true)
     try {
       await saveSquad(sport.id, selectedIds)
-      toast('success', `Squad for ${sport.name} updated (${selectedIds.length} player${selectedIds.length === 1 ? '' : 's'}).`)
+      toast(
+        'success',
+        isIndividual
+          ? `Participant selection for ${sport.name} saved (${selectedIds.length} player${selectedIds.length === 1 ? '' : 's'}).`
+          : `Squad for ${sport.name} updated (${selectedIds.length} player${selectedIds.length === 1 ? '' : 's'}).`
+      )
       onSaved()
       onClose()
     } catch (e) {
@@ -129,24 +176,36 @@ function SquadModal({
   }
 
   return (
-    <Modal open title={`Select Squad: ${sport.name}`} onClose={onClose} wide>
+    <Modal
+      open
+      title={isIndividual ? `Select Participant: ${sport.name} (Individual Game)` : `Select Squad: ${sport.name}`}
+      onClose={onClose}
+      wide
+    >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sand/30 p-3 text-sm">
-          <div>
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">{team.name} Roster</span>
-            <span className="ml-2 text-bark-soft">
-              ({selectedIds.length} of {roster.length} selected)
+            <span className="text-bark-soft">
+              ({selectedIds.length} of {roster.length} selected{maxLimit ? ` · Max ${maxLimit}` : ''})
             </span>
+            {isIndividual && (
+              <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-xs font-bold text-saffron-deep">
+                👤 Individual Game ({maxLimit ?? 1} player{maxLimit === 1 ? '' : 's'})
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn-outline btn-sm text-xs"
-              onClick={selectAll}
-              disabled={saving || roster.length === 0 || deadlinePassed}
-            >
-              Select All
-            </button>
+            {!isIndividual && (
+              <button
+                type="button"
+                className="btn-outline btn-sm text-xs"
+                onClick={selectAll}
+                disabled={saving || roster.length === 0 || deadlinePassed}
+              >
+                Select All
+              </button>
+            )}
             <button
               type="button"
               className="btn-outline btn-sm text-xs"
@@ -171,24 +230,32 @@ function SquadModal({
             <div className="mb-2 flex items-center justify-between text-xs font-semibold text-bark">
               <span className="flex items-center gap-1.5">
                 <UserCheck className="h-3.5 w-3.5 text-terracotta" />
-                Selected Squad Lineup ({selectedIds.length})
+                {isIndividual ? 'Selected Participant' : 'Selected Squad Lineup'} ({selectedIds.length})
               </span>
-              <span className="text-[11px] font-normal text-bark-soft">Ordered as selected (use ▲ / ▼ to reorder)</span>
+              <span className="text-[11px] font-normal text-bark-soft">
+                {isIndividual ? 'Selected to represent your team' : 'Ordered as selected (use ▲ / ▼ to reorder)'}
+              </span>
             </div>
             <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
               {selectedIds.map((id, idx) => {
                 const member = roster.find(m => m.id === id)
                 if (!member) return null
+                const isCap = member.name.trim().toLowerCase() === team.captain_name.trim().toLowerCase()
                 return (
                   <span
                     key={id}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-bark shadow-xs ring-1 ring-sand/80"
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-bark shadow-xs ring-1 ${
+                      isCap ? 'bg-saffron-soft/60 ring-saffron' : 'bg-white ring-sand/80'
+                    }`}
                   >
                     <span className="rounded-full bg-terracotta/15 px-1.5 py-0.2 text-[10px] font-bold text-terracotta">
                       #{idx + 1}
                     </span>
                     <span className="truncate max-w-[130px] font-semibold">{member.name}</span>
-                    {!deadlinePassed && (
+                    {isCap && (
+                      <span className="text-[10px] font-bold text-saffron-deep">👑</span>
+                    )}
+                    {!deadlinePassed && !isIndividual && (
                       <span className="inline-flex items-center gap-0.5 ml-1 border-l border-sand/60 pl-1 text-bark-soft">
                         {idx > 0 && (
                           <button
@@ -262,11 +329,11 @@ function SquadModal({
                   key={m.id}
                   className={`flex cursor-pointer items-center justify-between gap-3 p-3 transition hover:bg-cream/80 ${
                     isChecked ? 'bg-saffron-soft/30' : ''
-                  }`}
+                  } ${isCaptain ? 'border-l-4 border-l-terracotta bg-cream/30' : ''}`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <input
-                      type="checkbox"
+                      type={maxLimit === 1 ? 'radio' : 'checkbox'}
                       className="h-4 w-4 rounded-sm border-sand text-terracotta focus:ring-terracotta"
                       checked={isChecked}
                       onChange={() => toggleMember(m.id)}
@@ -278,10 +345,10 @@ function SquadModal({
                             #{selectedIdx + 1}
                           </span>
                         )}
-                        {m.name}
+                        <span>{m.name}</span>
                         {isCaptain && (
-                          <span className="rounded-full bg-saffron-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-bark">
-                            Captain
+                          <span className="rounded-full bg-saffron-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-saffron-deep ring-1 ring-saffron/40 flex items-center gap-1">
+                            👑 Team Leader
                           </span>
                         )}
                       </p>
@@ -289,7 +356,7 @@ function SquadModal({
                   </div>
                   {isChecked ? (
                     <span className="shrink-0 text-xs font-semibold text-terracotta flex items-center gap-1">
-                      <Check className="h-3.5 w-3.5" /> Selected (#{selectedIdx + 1})
+                      <Check className="h-3.5 w-3.5" /> Selected {maxLimit !== 1 ? `(#${selectedIdx + 1})` : ''}
                     </span>
                   ) : (
                     <span className="shrink-0 text-xs text-bark-soft">Available</span>
@@ -316,7 +383,9 @@ function SquadModal({
                   <Loader2 className="h-4 w-4 animate-spin" /> Saving...
                 </>
               ) : (
-                `Confirm Squad (${selectedIds.length})`
+                isIndividual
+                  ? `Confirm Participant${selectedIds.length === 1 ? '' : 's'} (${selectedIds.length}${maxLimit ? `/${maxLimit}` : ''})`
+                  : `Confirm Squad (${selectedIds.length})`
               )}
             </button>
           )}
@@ -348,7 +417,22 @@ export default function LeaderPortal() {
   const { teams, leaderboard, bundle, edition } = data
 
   const currentTeam = useMemo(() => {
-    return teams.find(t => t.id === session.teamId)
+    const t = teams.find(t => t.id === session.teamId)
+    if (!t) return undefined
+    const rawMembers = t.team_members ?? []
+    const hasCaptain = rawMembers.some(m => m.name.trim().toLowerCase() === t.captain_name.trim().toLowerCase())
+    if (hasCaptain) return t
+    const captainMember: Member = {
+      id: 'captain',
+      team_id: t.id,
+      name: t.captain_name,
+      photo_path: t.captain_photo_path,
+      sort_order: -1,
+    }
+    return {
+      ...t,
+      team_members: [captainMember, ...rawMembers],
+    }
   }, [teams, session.teamId])
 
   const registeredSportIds = useMemo(() => {
@@ -377,15 +461,23 @@ export default function LeaderPortal() {
   // Get member IDs map: sport_id -> member_id[]
   const teamMemberIdsBySport = useMemo(() => {
     const map = new Map<string, string[]>()
+    const capNameLower = currentTeam?.captain_name.trim().toLowerCase()
+    const capMember = currentTeam?.team_members?.find(m => m.name.trim().toLowerCase() === capNameLower)
+    const capId = capMember?.id ?? 'captain'
+
     bundle.participants
-      .filter(p => p.team_id === session.teamId && p.member_id)
+      .filter(p => p.team_id === session.teamId)
       .forEach(p => {
         const list = map.get(p.sport_id) ?? []
-        list.push(p.member_id!)
+        if (p.member_id) {
+          list.push(p.member_id)
+        } else if (capNameLower && p.player_name.trim().toLowerCase() === capNameLower) {
+          list.push(capId)
+        }
         map.set(p.sport_id, list)
       })
     return map
-  }, [bundle.participants, session.teamId])
+  }, [bundle.participants, session.teamId, currentTeam])
 
   async function handleToggleRegister(sport: Sport, shouldRegister: boolean) {
     setBusyAction(sport.id)
@@ -651,7 +743,18 @@ export default function LeaderPortal() {
                           />
                           <div>
                             <h3 className="text-xl font-bold text-bark">{s.name}</h3>
-                            <p className="text-xs text-bark-soft">{s.category || 'General Sport'}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-bark-soft">{s.category || 'General Sport'}</span>
+                              {s.game_type === 'individual' ? (
+                                <span className="rounded-full bg-saffron-soft px-2 py-0.5 text-[10px] font-bold text-saffron-deep">
+                                  👤 Individual ({s.max_participants ?? 1}p)
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-sand/40 px-2 py-0.5 text-[10px] font-medium text-bark-soft">
+                                  👥 Team
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <Badge status={s.status} />
@@ -696,9 +799,12 @@ export default function LeaderPortal() {
                         {isRegistered && (
                           <div className="mt-2 border-t border-sand/40 pt-2 text-xs">
                             <div className="flex items-center justify-between">
-                              <span className="text-bark-soft">Current Squad:</span>
+                              <span className="text-bark-soft">
+                                {s.game_type === 'individual' ? 'Selected Participant(s):' : 'Current Squad:'}
+                              </span>
                               <span className="font-semibold text-bark">
                                 {squadNames.length} player{squadNames.length === 1 ? '' : 's'}
+                                {s.game_type === 'individual' && s.max_participants ? ` (Max ${s.max_participants})` : ''}
                               </span>
                             </div>
 
@@ -716,7 +822,7 @@ export default function LeaderPortal() {
                               </div>
                             ) : (
                               <p className="mt-1 text-[11px] text-amber-700 font-medium">
-                                ⚠️ No players selected yet! Click "Select Squad" below.
+                                ⚠️ No player selected yet! Click "{s.game_type === 'individual' ? 'Select Participant' : 'Select Squad'}" below.
                               </p>
                             )}
                           </div>
@@ -727,7 +833,7 @@ export default function LeaderPortal() {
                       <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-sand/40 pt-3">
                         {isCompleted ? (
                           <span className="text-xs font-medium text-bark-faint italic">
-                            Sport completed — squad locked
+                            Sport completed — roster locked
                           </span>
                         ) : isDeadlinePassed(s.registration_deadline) ? (
                           <div className="flex w-full items-center justify-between gap-2">
@@ -740,7 +846,7 @@ export default function LeaderPortal() {
                                 className="btn-outline btn-sm text-xs"
                                 onClick={() => setSelectedSport(s)}
                               >
-                                View Squad
+                                View {s.game_type === 'individual' ? 'Participant' : 'Squad'}
                               </button>
                             )}
                           </div>
@@ -752,7 +858,11 @@ export default function LeaderPortal() {
                               onClick={() => setSelectedSport(s)}
                             >
                               <UserCheck className="h-3.5 w-3.5" />
-                              <span>{squadNames.length > 0 ? 'Edit Squad' : 'Select Squad'}</span>
+                              <span>
+                                {squadNames.length > 0
+                                  ? (s.game_type === 'individual' ? 'Edit Participant' : 'Edit Squad')
+                                  : (s.game_type === 'individual' ? 'Select Participant' : 'Select Squad')}
+                              </span>
                             </button>
 
                             <button

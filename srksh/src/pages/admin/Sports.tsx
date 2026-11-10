@@ -15,6 +15,10 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
 
   const [name, setName] = useState(sport?.name ?? '')
   const [category, setCategory] = useState(sport?.category ?? '')
+  const [gameType, setGameType] = useState<'team' | 'individual'>(sport?.game_type ?? 'team')
+  const [maxParticipants, setMaxParticipants] = useState<number | ''>(
+    sport?.max_participants ?? (sport?.game_type === 'individual' ? 1 : '')
+  )
   const [description, setDescription] = useState(sport?.description ?? '')
   const [status, setStatus] = useState<SportStatus>(sport?.status ?? 'upcoming')
   const [deadline, setDeadline] = useState(toLocalIso(sport?.registration_deadline))
@@ -54,6 +58,8 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
         category: category.trim() || null,
         description: description.trim() || null,
         status,
+        game_type: gameType,
+        max_participants: gameType === 'individual' ? (Number(maxParticipants) || 1) : null,
         registration_deadline,
         image_path,
         updated_at: new Date().toISOString(),
@@ -80,7 +86,46 @@ function SportForm({ sport, editionId, onClose, onSaved }: { sport: Sport | null
       <form className="space-y-4" noValidate onSubmit={e => { e.preventDefault(); void save() }}>
         {err && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{err}</p>}
         <Field label="Sport name *"><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Cricket" required /></Field>
-        <Field label="Type / category (optional)"><input className="input" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Outdoor, Indoor, Cultural" /></Field>
+        
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Game format *">
+            <select
+              className="input"
+              value={gameType}
+              onChange={e => {
+                const val = e.target.value as 'team' | 'individual'
+                setGameType(val)
+                if (val === 'individual' && !maxParticipants) {
+                  setMaxParticipants(1)
+                }
+              }}
+            >
+              <option value="team">👥 Team Sport (Squad)</option>
+              <option value="individual">👤 Individual Game (Single / Limited Players)</option>
+            </select>
+          </Field>
+          {gameType === 'individual' ? (
+            <Field label="Max players per team" hint="e.g. 1 for singles, 2 for doubles">
+              <input
+                type="number"
+                min={1}
+                className="input"
+                value={maxParticipants}
+                onChange={e => setMaxParticipants(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1))}
+                placeholder="1"
+              />
+            </Field>
+          ) : (
+            <Field label="Type / category (optional)">
+              <input className="input" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Outdoor, Indoor, Cultural" />
+            </Field>
+          )}
+        </div>
+        {gameType === 'individual' && (
+          <Field label="Type / category (optional)">
+            <input className="input" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Outdoor, Indoor, Cultural" />
+          </Field>
+        )}
         <Field label="Description (optional)"><textarea className="input" rows={3} value={description} onChange={e => setDescription(e.target.value)} /></Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Status">
@@ -158,7 +203,21 @@ export default function Sports() {
                 <Link to={`/admin/sports/${s.id}`} className="block">
                   <div className="flex items-center gap-3">
                     <Img src={imageUrl(s.image_path)} alt="" className="h-12 w-12 rounded-xl object-cover" />
-                    <div className="min-w-0 flex-1"><h2 className="truncate text-2xl font-semibold">{s.name}</h2><p className="text-xs text-bark-soft">{s.category || 'Sport'}</p></div>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-2xl font-semibold">{s.name}</h2>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-bark-soft">{s.category || 'Sport'}</span>
+                        {s.game_type === 'individual' ? (
+                          <span className="rounded-full bg-saffron-soft px-2 py-0.5 text-[10px] font-bold text-saffron-deep">
+                            👤 Individual ({s.max_participants ?? 1}p)
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-sand/40 px-2 py-0.5 text-[10px] font-medium text-bark-soft">
+                            👥 Team
+                          </span>
+                        )}
+                      </div>
+                    </div>
                     <Badge status={s.status} />
                   </div>
                   <p className="mt-4 text-sm text-bark-soft">{bundle.sportTeams.filter(t => t.sport_id === s.id).length} team(s) · {bundle.participants.filter(p => p.sport_id === s.id).length} player(s) · Result: {res?.status === 'completed' ? 'Completed' : 'Pending'}</p>
@@ -238,9 +297,22 @@ export default function Sports() {
 /* ---------- Participants for one team ---------- */
 function TeamParticipants({ sport, team, bundle, onChanged, canRemoveTeam }: { sport: Sport; team: Team; bundle: SportBundle; onChanged: () => void; canRemoveTeam: boolean }) {
   const toast = useToast()
-  const roster = team.team_members ?? []
+  const rawRoster = team.team_members ?? []
+  const hasCaptain = rawRoster.some(m => m.name.trim().toLowerCase() === team.captain_name.trim().toLowerCase())
+  const roster = useMemo(() => {
+    if (hasCaptain) return rawRoster
+    return [
+      { id: `captain-${team.id}`, team_id: team.id, name: team.captain_name, photo_path: team.captain_photo_path, sort_order: -1 },
+      ...rawRoster,
+    ]
+  }, [rawRoster, hasCaptain, team.id, team.captain_name, team.captain_photo_path])
+
   const saved = bundle.participants.filter(p => p.sport_id === sport.id && p.team_id === team.id)
   const savedMemberIds = new Set(saved.filter(p => p.member_id).map(p => p.member_id as string))
+  // Also check if captain is saved by name
+  if (!hasCaptain && saved.some(p => p.player_name.trim().toLowerCase() === team.captain_name.trim().toLowerCase())) {
+    savedMemberIds.add(`captain-${team.id}`)
+  }
   const [checked, setChecked] = useState<Set<string>>(new Set(savedMemberIds))
   const [editing, setEditing] = useState(false)
   const [q, setQ] = useState('')
@@ -254,10 +326,35 @@ function TeamParticipants({ sport, team, bundle, onChanged, canRemoveTeam }: { s
     setBusy(true)
     try {
       const toAdd = roster.filter(m => checked.has(m.id) && !savedMemberIds.has(m.id))
-      const toRemove = saved.filter(p => p.member_id && !checked.has(p.member_id)).map(p => p.id)
+      const toRemove = saved.filter(p => {
+        if (p.member_id && !checked.has(p.member_id)) return true
+        if (!p.member_id && p.player_name.trim().toLowerCase() === team.captain_name.trim().toLowerCase() && !checked.has(`captain-${team.id}`)) return true
+        return false
+      }).map(p => p.id)
       if (toRemove.length) { const { error } = await supabase.from('sport_participants').delete().in('id', toRemove); if (error) throw error }
       if (toAdd.length) {
-        const { error } = await supabase.from('sport_participants').insert(toAdd.map(m => ({ sport_id: sport.id, team_id: team.id, member_id: m.id, player_name: m.name, is_manual: false })))
+        const rows = await Promise.all(
+          toAdd.map(async m => {
+            let memberId: string | null = m.id
+            if (m.id.startsWith('captain-')) {
+              const { data: cap } = await supabase
+                .from('team_members')
+                .select('id')
+                .eq('team_id', team.id)
+                .ilike('name', m.name.trim())
+                .maybeSingle()
+              memberId = cap?.id ?? null
+            }
+            return {
+              sport_id: sport.id,
+              team_id: team.id,
+              member_id: memberId,
+              player_name: m.name,
+              is_manual: false,
+            }
+          })
+        )
+        const { error } = await supabase.from('sport_participants').insert(rows)
         if (error) throw error
       }
       toast('success', `${team.name} players saved.`); setEditing(false); onChanged()
@@ -312,12 +409,36 @@ function TeamParticipants({ sport, team, bundle, onChanged, canRemoveTeam }: { s
       {editing && (
         <div className="mt-3">
           <input className="input mb-2" placeholder="Search roster…" aria-label="Search roster" value={q} onChange={e => setQ(e.target.value)} />
+          {sport.game_type === 'individual' && (
+            <div className="mb-2 rounded-lg bg-saffron-soft/40 px-2.5 py-1 text-xs text-saffron-deep font-semibold">
+              👤 Individual Game: Max {sport.max_participants ?? 1} participant(s) per team.
+            </div>
+          )}
           <div className="mb-2 flex gap-3 text-xs"><button className="underline" onClick={() => setChecked(new Set(roster.map(m => m.id)))}>Select all</button><button className="underline" onClick={() => setChecked(new Set())}>Clear</button></div>
           {roster.length ? (
             <ul className="grid max-h-56 gap-1 overflow-y-auto sm:grid-cols-2">
               {shown.map(m => (
-                <li key={m.id}><label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-cream">
-                  <input type="checkbox" checked={checked.has(m.id)} onChange={() => setChecked(c => { const n = new Set(c); n.has(m.id) ? n.delete(m.id) : n.add(m.id); return n })} />{m.name}</label></li>
+                <li key={m.id}>
+                  <label className="flex cursor-pointer items-center justify-between rounded-lg px-2 py-1 text-sm hover:bg-cream">
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={checked.has(m.id)}
+                        onChange={() => setChecked(c => {
+                          const n = new Set(c)
+                          n.has(m.id) ? n.delete(m.id) : n.add(m.id)
+                          return n
+                        })}
+                      />
+                      <span>{m.name}</span>
+                    </span>
+                    {m.name.trim().toLowerCase() === team.captain_name.trim().toLowerCase() && (
+                      <span className="rounded-full bg-saffron-soft px-1.5 py-0.5 text-[10px] font-bold text-bark">
+                        Captain
+                      </span>
+                    )}
+                  </label>
+                </li>
               ))}
             </ul>
           ) : <p className="text-sm text-bark-soft">This team has no roster members yet. Add them under Teams, or add a player manually below.</p>}
@@ -673,7 +794,15 @@ export function SportDetail() {
   return (
     <>
       <Link to="/admin/sports" className="mb-4 inline-flex items-center gap-1 text-sm text-terracotta-deep hover:underline"><ArrowLeft className="h-4 w-4" />All sports</Link>
-      <PageTitle title={sport.name} text={sport.category || undefined} action={
+      <PageTitle
+        title={sport.name}
+        text={[
+          sport.category,
+          sport.game_type === 'individual'
+            ? `👤 Individual Game (${sport.max_participants ?? 1} player(s) per team)`
+            : '👥 Team Sport',
+        ].filter(Boolean).join(' · ')}
+        action={
         <div className="flex items-center gap-2"><Badge status={sport.status} />
           <button
             type="button"

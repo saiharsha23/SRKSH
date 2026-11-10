@@ -74,7 +74,14 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
         {img ? <Img src={img} alt={`${sport.name} icon`} className="h-14 w-14 rounded-2xl object-cover" /> : <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-bark font-serif text-2xl font-bold text-saffron" aria-hidden>{sport.name.charAt(0)}</span>}
         <div className="min-w-0 flex-1">
           <h3 className="text-3xl font-semibold">{sport.name}</h3>
-          <p className="text-xs uppercase tracking-wider text-bark-soft">{sport.category || 'Sport'}</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <p className="text-xs uppercase tracking-wider text-bark-soft">{sport.category || 'Sport'}</p>
+            {sport.game_type === 'individual' && (
+              <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-[10px] font-bold text-saffron-deep">
+                👤 Individual Game ({sport.max_participants ?? 1}p)
+              </span>
+            )}
+          </div>
         </div>
         <Badge status={sport.status} />
       </header>
@@ -117,7 +124,10 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
       </div>
 
       <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="mt-4 flex w-full items-center justify-between text-sm font-medium text-terracotta-deep">
-        <span className="flex items-center gap-2"><Users className="h-4 w-4" />{sTeams.length} participating team{sTeams.length === 1 ? '' : 's'} · {parts.length} player{parts.length === 1 ? '' : 's'}</span>
+        <span className="flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          {sTeams.length} participating team{sTeams.length === 1 ? '' : 's'} · {parts.length} {sport.game_type === 'individual' ? 'participant' : 'player'}{parts.length === 1 ? '' : 's'}
+        </span>
         <ChevronDown className={`h-4 w-4 transition ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (

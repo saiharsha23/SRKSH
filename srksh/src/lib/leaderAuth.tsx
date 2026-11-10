@@ -89,11 +89,32 @@ export function LeaderAuthProvider({ children }: { children: ReactNode }) {
 
   async function saveSquad(sportId: string, memberIds: string[]) {
     if (!session) throw new Error('Not logged in as team leader')
+    // If 'captain' or pseudo-ID is passed, find or create the captain's real UUID in team_members
+    const resolvedIds = await Promise.all(
+      memberIds.map(async id => {
+        if (id === 'captain' || id.startsWith('captain-')) {
+          const { data: cap } = await supabase
+            .from('team_members')
+            .select('id')
+            .eq('team_id', session.teamId)
+            .ilike('name', session.captainName.trim())
+            .maybeSingle()
+          if (cap?.id) return cap.id
+          const { data: newCap } = await supabase
+            .from('team_members')
+            .insert({ team_id: session.teamId, name: session.captainName.trim(), sort_order: 0 })
+            .select('id')
+            .single()
+          return newCap?.id ?? id
+        }
+        return id
+      })
+    )
     const { error } = await supabase.rpc('team_leader_save_squad', {
       p_team_id: session.teamId,
       p_pin: session.pin,
       p_sport_id: sportId,
-      p_member_ids: memberIds,
+      p_member_ids: resolvedIds,
     })
     if (error) throw error
   }

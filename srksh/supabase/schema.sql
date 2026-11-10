@@ -107,6 +107,8 @@ create table if not exists public.sports (
   description text,
   image_path text,
   status text not null default 'upcoming' check (status in ('upcoming','in_progress','completed')),
+  game_type text not null default 'team' check (game_type in ('team', 'individual')),
+  max_participants int,
   registration_deadline timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -404,19 +406,43 @@ set search_path = public
 as $$
 declare
   v_status text;
+  v_deadline timestamptz;
+  v_game_type text;
+  v_max_participants int;
   v_member record;
 begin
   if not exists (select 1 from public.team_credentials where team_id = p_team_id and btrim(pin) = btrim(p_pin)) then
     raise exception 'Invalid team passcode';
   end if;
 
-  select status into v_status from public.sports where id = p_sport_id;
+  select status, registration_deadline, coalesce(game_type, 'team'), max_participants 
+  into v_status, v_deadline, v_game_type, v_max_participants 
+  from public.sports where id = p_sport_id;
+
   if v_status is null then
     raise exception 'Sport not found';
   end if;
   if v_status = 'completed' then
     raise exception 'Cannot edit squad for a completed sport';
   end if;
+  if v_deadline is not null and now() > v_deadline then
+    raise exception 'The registration deadline for this sport has passed.';
+  end if;
+
+  if v_max_participants is not null and p_member_ids is not null and array_length(p_member_ids, 1) > v_max_participants then
+    raise exception 'Maximum % participant(s) allowed for this game', v_max_participants;
+  end if;
+
+  -- Auto-ensure team captain exists in team_members
+  insert into public.team_members (team_id, name, photo_path, sort_order)
+  select t.id, t.captain_name, t.captain_photo_path, 0
+  from public.teams t
+  where t.id = p_team_id
+    and not exists (
+      select 1 from public.team_members tm
+      where tm.team_id = t.id and lower(btrim(tm.name)) = lower(btrim(t.captain_name))
+    )
+  on conflict do nothing;
 
   insert into public.sport_teams (sport_id, team_id)
   values (p_sport_id, p_team_id)
@@ -429,13 +455,29 @@ begin
   -- Insert selected members from the official roster in the exact order selected by the leader
   if p_member_ids is not null and array_length(p_member_ids, 1) > 0 then
     for v_member in
-      select tm.id, tm.name
+      select tm.id, tm.name, ord.idx
       from unnest(p_member_ids) with ordinality as ord(id, idx)
       join public.team_members tm on tm.id = ord.id and tm.team_id = p_team_id
       order by ord.idx
     loop
-      insert into public.sport_participants (sport_id, team_id, member_id, player_name, is_manual)
-      values (p_sport_id, p_team_id, v_member.id, v_member.name, false);
+      insert into public.sport_participants (
+        sport_id,
+        team_id,
+        member_id,
+        player_name,
+        is_manual,
+        sort_order,
+        created_at
+      )
+      values (
+        p_sport_id,
+        p_team_id,
+        v_member.id,
+        v_member.name,
+        false,
+        v_member.idx,
+        now() + (v_member.idx * interval '10 milliseconds')
+      );
     end loop;
   end if;
 

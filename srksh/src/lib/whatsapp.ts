@@ -1,11 +1,12 @@
 import { supabase } from './supabase'
-import type { Sport, WhatsAppRecipient } from '../types'
+import type { Sport, WhatsAppRecipient, WhatsAppApiSettings } from '../types'
 import { fmtDateTime } from './format'
 
 const STORAGE_KEY = 'srksh_whatsapp_recipients_v1'
+const API_SETTINGS_STORAGE_KEY = 'srksh_whatsapp_api_settings_v1'
 
 /**
- * Cleans phone numbers into the format expected by WhatsApp wa.me links
+ * Cleans phone numbers into the format expected by WhatsApp APIs and wa.me links
  * (e.g. "919876543210" without "+", spaces, hyphens or parentheses).
  * If a 10-digit Indian number is entered without country code, "91" is prepended by default.
  */
@@ -87,7 +88,7 @@ export function formatSportWhatsAppMessage(
   return lines.join('\n')
 }
 
-/** Direct 1-to-1 WhatsApp chat URL */
+/** Direct 1-to-1 WhatsApp chat URL (wa.me link fallback) */
 export function createWhatsAppChatUrl(phone: string, message: string): string {
   const clean = cleanWhatsAppPhone(phone)
   return `https://wa.me/${clean}?text=${encodeURIComponent(message)}`
@@ -117,7 +118,7 @@ function saveLocalRecipients(items: WhatsAppRecipient[]) {
   }
 }
 
-/* ---------- Supabase + LocalStorage unified fetch ---------- */
+/* ---------- Recipients Management ---------- */
 export async function getWhatsAppRecipients(): Promise<WhatsAppRecipient[]> {
   try {
     const { data, error } = await supabase
@@ -126,7 +127,6 @@ export async function getWhatsAppRecipients(): Promise<WhatsAppRecipient[]> {
       .order('created_at', { ascending: true })
 
     if (!error && Array.isArray(data)) {
-      // Sync local cache
       saveLocalRecipients(data as WhatsAppRecipient[])
       return data as WhatsAppRecipient[]
     }
@@ -171,7 +171,6 @@ export async function saveWhatsAppRecipient(
   }
 
   if (!savedItem) {
-    // LocalStorage fallback
     if (recipient.id) {
       const idx = localList.findIndex(r => r.id === recipient.id)
       savedItem = {
@@ -190,7 +189,6 @@ export async function saveWhatsAppRecipient(
       localList.push(savedItem)
     }
   } else {
-    // Update local cache
     const idx = localList.findIndex(r => r.id === savedItem!.id)
     if (idx >= 0) localList[idx] = savedItem
     else localList.push(savedItem)
@@ -208,4 +206,245 @@ export async function deleteWhatsAppRecipient(id: string): Promise<void> {
   }
   const localList = getLocalRecipients().filter(r => r.id !== id)
   saveLocalRecipients(localList)
+}
+
+/* ============================================================
+   WhatsApp API Configuration & Background Delivery Service
+============================================================ */
+
+const defaultApiSettings: WhatsAppApiSettings = {
+  provider: 'none',
+  phone_number_id: '',
+  access_token: '',
+  webhook_url: '',
+}
+
+export async function getWhatsAppApiSettings(): Promise<WhatsAppApiSettings> {
+  // 1. Try Supabase
+  try {
+    const { data, error } = await supabase
+      .from('whatsapp_api_settings')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle()
+
+    if (!error && data) {
+      const config: WhatsAppApiSettings = {
+        provider: data.provider || 'none',
+        phone_number_id: data.phone_number_id || '',
+        access_token: data.access_token || '',
+        webhook_url: data.webhook_url || '',
+      }
+      try {
+        localStorage.setItem(API_SETTINGS_STORAGE_KEY, JSON.stringify(config))
+      } catch {}
+      return config
+    }
+  } catch {
+    // Fall back to localStorage
+  }
+
+  // 2. Try localStorage
+  try {
+    const local = localStorage.getItem(API_SETTINGS_STORAGE_KEY)
+    if (local) return JSON.parse(local)
+  } catch {}
+
+  return defaultApiSettings
+}
+
+export async function saveWhatsAppApiSettings(
+  settings: WhatsAppApiSettings
+): Promise<WhatsAppApiSettings> {
+  const payload = {
+    id: 1,
+    provider: settings.provider,
+    phone_number_id: settings.phone_number_id?.trim() || null,
+    access_token: settings.access_token?.trim() || null,
+    webhook_url: settings.webhook_url?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  // 1. Try saving to Supabase
+  try {
+    await supabase.from('whatsapp_api_settings').upsert(payload, { onConflict: 'id' })
+  } catch {
+    // Supabase table not migrated yet
+  }
+
+  // 2. Always persist locally
+  try {
+    localStorage.setItem(API_SETTINGS_STORAGE_KEY, JSON.stringify(payload))
+  } catch {}
+
+  return {
+    provider: payload.provider,
+    phone_number_id: payload.phone_number_id || '',
+    access_token: payload.access_token || '',
+    webhook_url: payload.webhook_url || '',
+  }
+}
+
+export interface ApiSendResult {
+  success: boolean
+  messageId?: string
+  error?: string
+}
+
+/**
+ * Sends a WhatsApp message automatically via the configured API provider
+ * (Meta WhatsApp Business Cloud API, UltraMsg Gateway, or Custom Webhook).
+ */
+export async function sendWhatsAppMessageViaApi(
+  toPhone: string,
+  messageText: string,
+  config?: WhatsAppApiSettings
+): Promise<ApiSendResult> {
+  const settings = config || (await getWhatsAppApiSettings())
+  const cleanPhone = cleanWhatsAppPhone(toPhone)
+
+  if (!cleanPhone) {
+    return { success: false, error: 'Recipient phone number is invalid.' }
+  }
+
+  if (!settings || settings.provider === 'none') {
+    return {
+      success: false,
+      error: 'WhatsApp API is not configured. Go to Admin Settings → WhatsApp API to set it up.',
+    }
+  }
+
+  try {
+    // Meta WhatsApp Business Cloud API (Official Graph API — Permanent Provider)
+    if (settings.provider === 'meta') {
+      if (!settings.phone_number_id || !settings.access_token) {
+        return { success: false, error: 'Meta Phone Number ID and Access Token are required.' }
+      }
+
+      const res = await fetch(`https://graph.facebook.com/v21.0/${settings.phone_number_id}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${settings.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cleanPhone,
+          type: 'text',
+          text: {
+            preview_url: true,
+            body: messageText,
+          },
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        const errorMsg = data?.error?.message || data?.error?.error_user_msg || `Meta API HTTP ${res.status}`
+        return { success: false, error: errorMsg }
+      }
+
+      const messageId = data?.messages?.[0]?.id
+      return { success: true, messageId }
+    }
+
+    // Provider 2: UltraMsg WhatsApp Gateway
+    if (settings.provider === 'ultramsg') {
+      if (!settings.phone_number_id || !settings.access_token) {
+        return { success: false, error: 'UltraMsg Instance ID and Token are required.' }
+      }
+
+      const res = await fetch(`https://api.ultramsg.com/${settings.phone_number_id}/messages/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token: settings.access_token,
+          to: cleanPhone,
+          body: messageText,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || data?.error) {
+        return { success: false, error: data?.error || `UltraMsg HTTP ${res.status}` }
+      }
+
+      return { success: true, messageId: String(data?.id || '') }
+    }
+
+    // Provider 3: Green-API Gateway (Instance ID & API Token)
+    if (settings.provider === 'green_api') {
+      if (!settings.phone_number_id || !settings.access_token) {
+        return { success: false, error: 'Green-API Instance ID and Token are required.' }
+      }
+
+      const res = await fetch(
+        `https://api.green-api.com/waInstance${settings.phone_number_id}/sendMessage/${settings.access_token}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chatId: `${cleanPhone}@c.us`,
+            message: messageText,
+          }),
+        }
+      )
+
+      const data = await res.json()
+      if (!res.ok || data?.error) {
+        return {
+          success: false,
+          error: data?.error || data?.message || `Green-API HTTP ${res.status}`,
+        }
+      }
+
+      return { success: true, messageId: String(data?.idMessage || '') }
+    }
+
+    // Provider 4: Custom Generic Webhook (e.g. n8n, Make, Zapier, Express backend)
+    if (settings.provider === 'generic_webhook') {
+      if (!settings.webhook_url) {
+        return { success: false, error: 'Webhook URL is not configured.' }
+      }
+
+      const res = await fetch(settings.webhook_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          message: messageText,
+          timestamp: new Date().toISOString(),
+        }),
+      })
+
+      if (!res.ok) {
+        return { success: false, error: `Webhook returned HTTP ${res.status}` }
+      }
+
+      return { success: true }
+    }
+
+    return { success: false, error: `Unsupported WhatsApp provider: ${settings.provider}` }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: `Network error sending WhatsApp: ${msg}` }
+  }
+}
+
+/**
+ * Tests connection to the configured WhatsApp API by sending a short test message
+ */
+export async function testWhatsAppApiConnection(
+  targetPhone: string,
+  settings: WhatsAppApiSettings
+): Promise<ApiSendResult> {
+  const testMsg = `🏆 *SRKSH HPL Notification Test*\n\nWhatsApp API is connected and working successfully!\nTime: ${new Date().toLocaleTimeString()}`
+  return sendWhatsAppMessageViaApi(targetPhone, testMsg, settings)
 }

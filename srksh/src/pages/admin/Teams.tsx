@@ -96,6 +96,24 @@ function TeamForm({ team, editionId, initialPin, onClose, onSaved }: { team: Tea
           const { error } = await supabase.from('team_members').insert({ team_id: teamId, name: m.name.trim(), photo_path, sort_order: i }); if (error) throw error
         }
       }
+      // Ensure team captain exists in team_members as a selectable roster member
+      const captainNameClean = captain.trim()
+      if (captainNameClean) {
+        const { data: existingCap } = await supabase
+          .from('team_members')
+          .select('id')
+          .eq('team_id', teamId)
+          .ilike('name', captainNameClean)
+          .maybeSingle()
+        if (!existingCap) {
+          await supabase.from('team_members').insert({
+            team_id: teamId,
+            name: captainNameClean,
+            photo_path: captain_photo_path,
+            sort_order: 0,
+          })
+        }
+      }
       if (pin.trim()) {
         const { error: pinErr } = await supabase.rpc('admin_set_team_pin', { p_team_id: teamId, p_pin: pin.trim() })
         if (pinErr) throw pinErr

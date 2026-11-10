@@ -1,5 +1,6 @@
 export type EditionStatus = 'upcoming' | 'active' | 'completed'
 export type SportStatus = 'upcoming' | 'in_progress' | 'completed'
+export type GameType = 'team' | 'individual'
 
 export interface Edition { id: string; name: string; status: EditionStatus; is_current: boolean; tie_break: 'none' | 'wins'; created_at: string }
 export interface Member { id: string; team_id: string; name: string; photo_path: string | null; sort_order: number }
@@ -12,6 +13,8 @@ export interface Team {
 export interface Sport {
   id: string; edition_id: string; name: string; category: string | null; description: string | null
   image_path: string | null; status: SportStatus; registration_deadline: string | null; created_at: string
+  game_type?: GameType
+  max_participants?: number | null
 }
 
 export interface SportTeam { sport_id: string; team_id: string }
@@ -40,4 +43,15 @@ export interface WhatsAppRecipient {
   phone: string
   role?: string | null
   created_at?: string
+}
+
+export type WhatsAppApiProvider = 'none' | 'meta' | 'ultramsg' | 'green_api' | 'generic_webhook'
+
+export interface WhatsAppApiSettings {
+  id?: number
+  provider: WhatsAppApiProvider
+  phone_number_id?: string | null
+  access_token?: string | null
+  webhook_url?: string | null
+  updated_at?: string
 }

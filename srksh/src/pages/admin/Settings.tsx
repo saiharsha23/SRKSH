@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Loader2, MessageCircle, Phone, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, KeyRound, Loader2, MessageCircle, Phone, Plus, Send, ShieldCheck, Trash2, Zap } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { getEditions, getSettings, useQuery } from '../../lib/data'
-import type { Edition, EditionStatus, SiteSettings, WhatsAppRecipient } from '../../types'
+import type { Edition, EditionStatus, SiteSettings, WhatsAppRecipient, WhatsAppApiSettings, WhatsAppApiProvider } from '../../types'
 import { Badge, ConfirmDialog, ErrorBox, Spinner, useToast } from '../../components/ui'
 import { Field, PageTitle, errMsg } from './common'
-import { cleanWhatsAppPhone, getWhatsAppRecipients, saveWhatsAppRecipient, deleteWhatsAppRecipient } from '../../lib/whatsapp'
+import {
+  cleanWhatsAppPhone,
+  getWhatsAppRecipients,
+  saveWhatsAppRecipient,
+  deleteWhatsAppRecipient,
+  getWhatsAppApiSettings,
+  saveWhatsAppApiSettings,
+  testWhatsAppApiConnection,
+} from '../../lib/whatsapp'
 
 function EditionCard({ ed, onSaved }: { ed: Edition; onSaved: () => void }) {
   const toast = useToast()
@@ -58,13 +66,14 @@ export default function Settings() {
       if (existing) r = await supabase.from('hpl_editions').update({ is_current: true }).eq('id', existing.id)
       else r = await supabase.from('hpl_editions').insert({ name: name!.trim(), status: 'upcoming', is_current: true })
       if (r.error) {
-        if (current) await supabase.from('hpl_editions').update({ is_current: true }).eq('id', current.id) // roll back
+        if (current) await supabase.from('hpl_editions').update({ is_current: true }).eq('id', current.id)
         throw r.error
       }
       toast('success', existing ? `${existing.name} is now the current edition.` : 'New edition created. Previous results are kept.')
       setNewName(''); setConfirmNew(false); setSwitchTo(null); void eds.reload()
     } catch (e) { toast('error', errMsg(e)) } finally { setBusy(false) }
   }
+
   async function saveContact() {
     setBusy(true)
     const clean = (v?: string | null) => (v?.trim() ? v.trim() : null)
@@ -89,6 +98,19 @@ export default function Settings() {
   const [addingRecipient, setAddingRecipient] = useState(false)
   const [recipientBusy, setRecipientBusy] = useState(false)
 
+  /* ---------- WhatsApp API Configuration state ---------- */
+  const [apiSettings, setApiSettings] = useState<WhatsAppApiSettings>({
+    provider: 'none',
+    phone_number_id: '',
+    access_token: '',
+    webhook_url: '',
+  })
+  const [loadingApi, setLoadingApi] = useState(true)
+  const [savingApi, setSavingApi] = useState(false)
+  const [testPhone, setTestPhone] = useState('')
+  const [testingApi, setTestingApi] = useState(false)
+  const [testFeedback, setTestFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
+
   async function loadRecipients() {
     try {
       const list = await getWhatsAppRecipients()
@@ -98,7 +120,19 @@ export default function Settings() {
     }
   }
 
-  useEffect(() => { void loadRecipients() }, [])
+  async function loadApi() {
+    try {
+      const config = await getWhatsAppApiSettings()
+      setApiSettings(config)
+    } finally {
+      setLoadingApi(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadRecipients()
+    void loadApi()
+  }, [])
 
   async function addRecipient(e: React.FormEvent) {
     e.preventDefault()
@@ -135,6 +169,45 @@ export default function Settings() {
     }
   }
 
+  async function handleSaveApi(e: React.FormEvent) {
+    e.preventDefault()
+    setSavingApi(true)
+    try {
+      const saved = await saveWhatsAppApiSettings(apiSettings)
+      setApiSettings(saved)
+      toast('success', 'WhatsApp API configuration saved.')
+    } catch (err) {
+      toast('error', `Could not save API settings: ${errMsg(err)}`)
+    } finally {
+      setSavingApi(false)
+    }
+  }
+
+  async function handleTestApi() {
+    if (!testPhone.trim()) {
+      toast('error', 'Enter a phone number to send test message.')
+      return
+    }
+    setTestingApi(true)
+    setTestFeedback(null)
+    try {
+      const res = await testWhatsAppApiConnection(testPhone, apiSettings)
+      if (res.success) {
+        setTestFeedback({ kind: 'success', msg: 'Test message sent successfully via WhatsApp API!' })
+        toast('success', 'Test message delivered!')
+      } else {
+        setTestFeedback({ kind: 'error', msg: res.error || 'Failed to send test message.' })
+        toast('error', res.error || 'Test message failed.')
+      }
+    } catch (err) {
+      const msg = errMsg(err)
+      setTestFeedback({ kind: 'error', msg })
+      toast('error', msg)
+    } finally {
+      setTestingApi(false)
+    }
+  }
+
   if (eds.loading || st.loading) return <Spinner />
   if (eds.error) return <ErrorBox message={eds.error} onRetry={eds.reload} />
   return (
@@ -168,7 +241,7 @@ export default function Settings() {
               WhatsApp Notification Numbers
             </h2>
             <p className="text-sm text-bark-soft">
-              Numbers configured here, along with Team Captain numbers, receive 1-click WhatsApp announcement links whenever a new sport is added.
+              Numbers configured here, along with Team Captain numbers, receive WhatsApp announcements whenever a sport is added.
             </p>
           </div>
           <button
@@ -289,6 +362,139 @@ export default function Settings() {
         </div>
       </section>
 
+      {/* Meta WhatsApp Cloud API & Automated Background Delivery */}
+      <section className="mb-10">
+        <div className="card border-2 border-emerald-200 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
+                  <Zap className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-bark">Meta WhatsApp Cloud API</h2>
+                  <p className="text-xs text-bark-soft">
+                    Official WhatsApp Cloud API with 1,000 free conversations/month. Automatically send announcements to all captains in the background with 1 tap.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              apiSettings.provider === 'meta' && apiSettings.phone_number_id && apiSettings.access_token
+                ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                : 'bg-sand/60 text-bark-soft'
+            }`}>
+              {apiSettings.provider === 'meta' && apiSettings.phone_number_id && apiSettings.access_token
+                ? '⚡ Meta Cloud API Active'
+                : 'Manual wa.me Links (API Inactive)'}
+            </span>
+          </div>
+
+          {loadingApi ? (
+            <Spinner label="Loading API settings…" />
+          ) : (
+            <form onSubmit={handleSaveApi} className="mt-4 space-y-4">
+              <div className="grid gap-4 rounded-2xl bg-cream/50 p-4 sm:grid-cols-2">
+                <Field label="Meta Phone Number ID *" hint="From developers.facebook.com → Your App → WhatsApp → API Setup">
+                  <input
+                    className="input font-mono text-xs"
+                    placeholder="e.g. 104829104829104"
+                    value={apiSettings.phone_number_id ?? ''}
+                    onChange={e => setApiSettings(s => ({ ...s, provider: 'meta', phone_number_id: e.target.value }))}
+                    required
+                  />
+                </Field>
+                <Field label="Permanent Access Token *" hint="System User Token with whatsapp_business_messaging permission">
+                  <input
+                    className="input font-mono text-xs"
+                    type="password"
+                    placeholder="EAAG..."
+                    value={apiSettings.access_token ?? ''}
+                    onChange={e => setApiSettings(s => ({ ...s, provider: 'meta', access_token: e.target.value }))}
+                    required
+                  />
+                </Field>
+              </div>
+
+              <div className="rounded-xl border border-sand/70 bg-cream/30 p-3 text-[11px] text-bark-soft leading-relaxed">
+                💡 <strong>How to get a Permanent Token that never expires:</strong> In{' '}
+                <a
+                  href="https://business.facebook.com/settings/system-users"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-emerald-800 underline"
+                >
+                  Meta Business Manager → System Users
+                </a>
+                , create an Admin System User, click <strong>Generate New Token</strong>, select your app, and check{' '}
+                <code className="rounded bg-sand/60 px-1 text-[10px] text-bark">whatsapp_business_messaging</code>.
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <span className="text-xs text-bark-faint">
+                  Tokens are saved securely in Supabase and only accessible to administrators.
+                </span>
+                <div className="flex items-center gap-2">
+                  {apiSettings.provider === 'meta' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleared: WhatsAppApiSettings = { provider: 'none', phone_number_id: '', access_token: '' }
+                        setApiSettings(cleared)
+                        void saveWhatsAppApiSettings(cleared)
+                        toast('success', 'WhatsApp API deactivated. Using 1-click manual links.')
+                      }}
+                      className="btn-outline btn-sm text-xs text-red-700 hover:bg-red-50"
+                    >
+                      Disconnect API
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={savingApi}
+                    className="btn-primary btn-sm flex items-center gap-1.5 !bg-emerald-700 !text-white hover:!bg-emerald-800"
+                  >
+                    {savingApi && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Save Meta API Credentials
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {/* Test WhatsApp API section */}
+          <div className="mt-5 border-t border-sand pt-4">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-bark">
+              Verify Meta WhatsApp API Connection
+            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className="input max-w-xs text-xs"
+                type="tel"
+                placeholder="Recipient phone (e.g. +91 9019047149)"
+                value={testPhone}
+                onChange={e => setTestPhone(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => void handleTestApi()}
+                disabled={testingApi || !testPhone.trim()}
+                className="btn-outline btn-sm flex items-center gap-1.5 border-emerald-300 text-emerald-900 hover:bg-emerald-50 text-xs"
+              >
+                {testingApi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Send Test API Message
+              </button>
+            </div>
+            {testFeedback && (
+              <p className={`mt-2 text-xs font-medium ${testFeedback.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+                {testFeedback.kind === 'success' ? '✓ ' : '✗ '}
+                {testFeedback.msg}
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+
       <section>
         <h2 className="mb-1 text-2xl font-semibold">Footer contact & WhatsApp group</h2>
         <p className="mb-4 text-sm text-bark-soft">Optional. Anything left blank is simply not shown on the website.</p>
@@ -296,7 +502,7 @@ export default function Settings() {
           <Field label="Email"><input type="email" {...f('contact_email')} /></Field>
           <Field label="Phone"><input type="tel" {...f('contact_phone')} /></Field>
           <div className="sm:col-span-2">
-            <Field label="Official HPL WhatsApp Announcements Group / Channel Link" hint="e.g. https://chat.whatsapp.com/... (Used in 1-click broadcast)">
+            <Field label="Official HPL WhatsApp Announcements Group / Channel Link" hint="e.g. https://chat.whatsapp.com/... (Used in broadcast)">
               <input type="url" placeholder="https://chat.whatsapp.com/..." {...f('whatsapp_group_url')} />
             </Field>
           </div>

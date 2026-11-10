@@ -127,6 +127,8 @@ as $$
 declare
   v_status text;
   v_deadline timestamptz;
+  v_game_type text;
+  v_max_participants int;
   v_member record;
 begin
   -- Validate PIN
@@ -134,8 +136,11 @@ begin
     raise exception 'Invalid team passcode';
   end if;
 
-  -- Validate sport status and registration deadline
-  select status, registration_deadline into v_status, v_deadline from public.sports where id = p_sport_id;
+  -- Validate sport status, deadline, game type, and max participants
+  select status, registration_deadline, coalesce(game_type, 'team'), max_participants 
+  into v_status, v_deadline, v_game_type, v_max_participants 
+  from public.sports where id = p_sport_id;
+
   if v_status is null then
     raise exception 'Sport not found';
   end if;
@@ -145,6 +150,22 @@ begin
   if v_deadline is not null and now() > v_deadline then
     raise exception 'The registration deadline for this sport has passed.';
   end if;
+
+  -- Validate max participants if configured (e.g. for individual games)
+  if v_max_participants is not null and p_member_ids is not null and array_length(p_member_ids, 1) > v_max_participants then
+    raise exception 'Maximum % participant(s) allowed for this game', v_max_participants;
+  end if;
+
+  -- Auto-ensure team captain exists in team_members
+  insert into public.team_members (team_id, name, photo_path, sort_order)
+  select t.id, t.captain_name, t.captain_photo_path, 0
+  from public.teams t
+  where t.id = p_team_id
+    and not exists (
+      select 1 from public.team_members tm
+      where tm.team_id = t.id and lower(btrim(tm.name)) = lower(btrim(t.captain_name))
+    )
+  on conflict do nothing;
 
   -- Auto-register team in sport if not already registered
   insert into public.sport_teams (sport_id, team_id)
