@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Activity, Calendar, ChevronDown, Clock, Crown, MapPin, Medal, TrendingUp, Trophy, Users, RotateCw } from 'lucide-react'
 import type { LeaderRow, Participant, Placement, Sport, SportResult, SportTeam, Team, SportMatch } from '../types'
 import type { SportBundle } from '../lib/data'
-import { imageUrl } from '../lib/supabase'
+import { imageUrl, supabase } from '../lib/supabase'
 import { fmtDateTime, fmtPoints, isDeadlinePassed, ordinal } from '../lib/format'
 import { Badge, ColourDot, EmptyState, Img } from './ui'
 import { formatMatchScoreDisplay } from '../lib/tournament'
@@ -72,12 +72,71 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
   const done = result?.status === 'completed' && placements.length > 0
   const img = imageUrl(sport.image_path)
 
-  const sportMatches = (bundle.matches ?? [])
+  const initialMatches = (bundle.matches ?? [])
     .filter(m => m.sport_id === sport.id)
     .sort((a, b) => a.match_number - b.match_number)
+
+  const [sportMatches, setSportMatches] = useState<SportMatch[]>(initialMatches)
+
+  useEffect(() => {
+    setSportMatches(
+      (bundle.matches ?? [])
+        .filter(m => m.sport_id === sport.id)
+        .sort((a, b) => a.match_number - b.match_number)
+    )
+  }, [bundle.matches, sport.id])
+
+  // Live real-time auto-updating of match cards on the public page
+  useEffect(() => {
+    const fetchLatestMatches = async () => {
+      try {
+        const { data: updated } = await supabase
+          .from('sport_matches')
+          .select('*')
+          .eq('sport_id', sport.id)
+          .order('match_number', { ascending: true })
+        if (updated && updated.length > 0) {
+          setSportMatches(updated as SportMatch[])
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Auto-poll every 2.5s for zero-click score stream
+    const pollTimer = setInterval(() => {
+      void fetchLatestMatches()
+    }, 2500)
+
+    // Supabase Realtime channel
+    const channel = supabase
+      .channel(`public_sport_matches_${sport.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sport_matches', filter: `sport_id=eq.${sport.id}` },
+        payload => {
+          if (payload.new) {
+            setSportMatches(prev => {
+              const next = [...prev]
+              const idx = next.findIndex(m => m.id === (payload.new as SportMatch).id)
+              if (idx >= 0) next[idx] = payload.new as SportMatch
+              else next.push(payload.new as SportMatch)
+              return next.sort((a, b) => a.match_number - b.match_number)
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      clearInterval(pollTimer)
+      void supabase.removeChannel(channel)
+    }
+  }, [sport.id])
+
   const liveMatches = sportMatches.filter(m => m.status === 'live')
   const [tab, setTab] = useState<'matches' | 'result'>(
-    sportMatches.length > 0 && !done ? 'matches' : 'result'
+    initialMatches.length > 0 && !done ? 'matches' : 'result'
   )
   const [viewingScorecardMatch, setViewingScorecardMatch] = useState<SportMatch | null>(null)
   const [statsOpen, setStatsOpen] = useState(false)
