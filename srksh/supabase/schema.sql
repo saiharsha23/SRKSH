@@ -151,8 +151,8 @@ create table if not exists public.result_placements (
   team_id uuid not null references public.teams(id) on delete restrict,  -- protects history
   placement int not null check (placement >= 1),
   points numeric(8,2) check (points is null or points >= 0),
-  unique (result_id, placement),   -- one team per placement
-  unique (result_id, team_id)      -- a team cannot place twice => no double counting
+  player_name text,
+  unique (result_id, placement)   -- one winner/contestant per placement position
 );
 
 -- A placed team must be a participant of that sport
@@ -224,8 +224,14 @@ begin
 
   delete from public.result_placements where result_id = v_id;
   for r in select * from jsonb_array_elements(coalesce(p_placements, '[]'::jsonb)) loop
-    insert into public.result_placements (result_id, team_id, placement, points)
-    values (v_id, (r->>'team_id')::uuid, (r->>'placement')::int, nullif(r->>'points','')::numeric);
+    insert into public.result_placements (result_id, team_id, placement, points, player_name)
+    values (
+      v_id,
+      (r->>'team_id')::uuid,
+      (r->>'placement')::int,
+      nullif(r->>'points','')::numeric,
+      nullif(r->>'player_name','')
+    );
   end loop;
 
   if p_status = 'completed' then

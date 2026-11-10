@@ -455,15 +455,21 @@ function TeamParticipants({ sport, team, bundle, onChanged, canRemoveTeam }: { s
 }
 
 /* ---------- Results & points editor ---------- */
-interface Row { key: string; team_id: string; points: string }
+interface Row { key: string; team_id: string; player_name: string; points: string }
 function ResultEditor({ sport, teams, bundle, onChanged }: { sport: Sport; teams: Team[]; bundle: SportBundle; onChanged: () => void }) {
   const toast = useToast()
+  const isIndividual = sport.game_type === 'individual'
   const result = bundle.results.find(r => r.sport_id === sport.id)
   const savedPl = result ? bundle.placements.filter(p => p.result_id === result.id).sort((a, b) => a.placement - b.placement) : []
   const participating = teams.filter(t => bundle.sportTeams.some(st => st.sport_id === sport.id && st.team_id === t.id))
   const init = (): Row[] => {
-    const rows: Row[] = savedPl.map(p => ({ key: p.id, team_id: p.team_id, points: p.points == null ? '' : String(p.points) }))
-    while (rows.length < 2) rows.push({ key: crypto.randomUUID(), team_id: '', points: '' })
+    const rows: Row[] = savedPl.map(p => ({
+      key: p.id,
+      team_id: p.team_id,
+      player_name: p.player_name ?? '',
+      points: p.points == null ? '' : String(p.points),
+    }))
+    while (rows.length < 2) rows.push({ key: crypto.randomUUID(), team_id: '', player_name: '', points: '' })
     return rows
   }
   const [rows, setRows] = useState<Row[]>(init)
@@ -473,27 +479,55 @@ function ResultEditor({ sport, teams, bundle, onChanged }: { sport: Sport; teams
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
   const [errs, setErrs] = useState<string[]>([])
-  const label = (i: number) => (i === 0 ? 'Winning team' : i === 1 ? 'Runner-up team' : `${ordinal(i + 1)} place team`)
+  const label = (i: number) => {
+    const pos = i === 0 ? 'Winner (1st)' : i === 1 ? 'Runner-up (2nd)' : `${ordinal(i + 1)} place`
+    return isIndividual ? `${pos} Contestant` : `${pos} Team`
+  }
 
   function validate() {
     const e: string[] = []
     const filled = rows.filter(r => r.team_id)
-    const ids = filled.map(r => r.team_id)
-    if (new Set(ids).size !== ids.length) e.push('The same team cannot hold two placements (winner and runner-up must be different).')
+    if (!isIndividual) {
+      const ids = filled.map(r => r.team_id)
+      if (new Set(ids).size !== ids.length) {
+        e.push('For a team sport, the same team cannot hold two placements (winner and runner-up must be different).')
+      }
+    } else {
+      // For individual games, multiple contestants from the same team CAN place (e.g. 1st and 2nd),
+      // but the exact same contestant/player cannot take two placements.
+      const playerTokens = filled
+        .filter(r => r.player_name.trim())
+        .map(r => `${r.team_id}:${r.player_name.trim().toLowerCase()}`)
+      if (new Set(playerTokens).size !== playerTokens.length) {
+        e.push('The same individual contestant cannot hold multiple placements in this game.')
+      }
+    }
     rows.forEach((r, i) => {
       if (!r.team_id && r.points !== '') e.push(`Choose a team for ${label(i).toLowerCase()} or clear its points.`)
       if (r.points !== '' && (isNaN(Number(r.points)) || Number(r.points) < 0)) e.push(`Points for ${label(i).toLowerCase()} must be a number of 0 or more.`)
     })
-    if (rows[1]?.team_id && !rows[0]?.team_id) e.push('Choose a winning team before a runner-up.')
-    if (status === 'completed' && !rows[0]?.team_id) e.push('A completed result needs at least a winning team.')
+    if (rows[1]?.team_id && !rows[0]?.team_id) e.push('Choose a winner before a runner-up.')
+    if (status === 'completed' && !rows[0]?.team_id) e.push('A completed result needs at least a winner.')
     return e
   }
   async function save() {
     setBusy(true); setConfirmSave(false)
     try {
-      // placement = position among the *rows*, so winner/runner-up always map to 1/2
-      const placements = rows.map((r, i) => ({ r, i })).filter(x => x.r.team_id).map(x => ({ team_id: x.r.team_id, placement: x.i + 1, points: x.r.points === '' ? null : Number(x.r.points) }))
-      const { error } = await supabase.rpc('save_sport_result', { p_sport_id: sport.id, p_status: status, p_notes: notes.trim() || null, p_placements: placements })
+      const placements = rows
+        .map((r, i) => ({ r, i }))
+        .filter(x => x.r.team_id)
+        .map(x => ({
+          team_id: x.r.team_id,
+          player_name: isIndividual ? (x.r.player_name.trim() || null) : null,
+          placement: x.i + 1,
+          points: x.r.points === '' ? null : Number(x.r.points),
+        }))
+      const { error } = await supabase.rpc('save_sport_result', {
+        p_sport_id: sport.id,
+        p_status: status,
+        p_notes: notes.trim() || null,
+        p_placements: placements,
+      })
       if (error) throw error
       toast('success', status === 'completed' ? 'Result saved and leaderboard updated.' : 'Result saved as pending.'); onChanged()
     } catch (e) { toast('error', `Could not save result: ${errMsg(e)}`) } finally { setBusy(false) }
@@ -508,7 +542,7 @@ function ResultEditor({ sport, teams, bundle, onChanged }: { sport: Sport; teams
     try {
       const { error } = await supabase.from('sport_results').delete().eq('id', result.id); if (error) throw error
       if (sport.status === 'completed') await supabase.from('sports').update({ status: 'in_progress' }).eq('id', sport.id)
-      setRows([{ key: 'a', team_id: '', points: '' }, { key: 'b', team_id: '', points: '' }]); setStatus('pending'); setNotes('')
+      setRows([{ key: 'a', team_id: '', player_name: '', points: '' }, { key: 'b', team_id: '', player_name: '', points: '' }]); setStatus('pending'); setNotes('')
       toast('success', 'Result reset. The leaderboard has been recalculated.'); setConfirmReset(false); onChanged()
     } catch (e) { toast('error', errMsg(e)) } finally { setBusy(false) }
   }
@@ -519,20 +553,84 @@ function ResultEditor({ sport, teams, bundle, onChanged }: { sport: Sport; teams
     <div>
       {errs.length > 0 && <ul role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{errs.map(x => <li key={x}>• {x}</li>)}</ul>}
       <div className="space-y-3">
-        {rows.map((r, i) => (
-          <div key={r.key} className="grid items-end gap-3 sm:grid-cols-[1fr_9rem_auto]">
-            <Field label={label(i)}>
-              <select className="input" value={r.team_id} onChange={e => setRow(r.key, { team_id: e.target.value })}>
-                <option value="">— Not set —</option>
-                {participating.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Points"><input className="input" inputMode="decimal" type="number" min="0" step="any" placeholder="e.g. 10" value={r.points} onChange={e => setRow(r.key, { points: e.target.value })} /></Field>
-            {i >= 2 ? <button type="button" aria-label="Remove placement" className="mb-1 rounded-full p-2 text-red-700 hover:bg-red-50" onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))}><Trash2 className="h-4 w-4" /></button> : <span />}
+        {isIndividual && (
+          <div className="rounded-xl bg-saffron-soft/30 p-3 text-xs text-bark border border-saffron/40 mb-3">
+            💡 <strong>Individual Scoring Notice:</strong> Multiple contestants from the same team can place (e.g. 1st and 2nd from the same team). Points for each placement will both be added to the team's total points on the leaderboard!
           </div>
-        ))}
+        )}
+        {rows.map((r, i) => {
+          const teamParticipants = isIndividual && r.team_id
+            ? bundle.participants.filter(p => p.sport_id === sport.id && p.team_id === r.team_id)
+            : []
+
+          return (
+            <div
+              key={r.key}
+              className={`grid items-end gap-3 ${
+                isIndividual ? 'sm:grid-cols-[1.2fr_1.2fr_7rem_auto]' : 'sm:grid-cols-[1fr_9rem_auto]'
+              }`}
+            >
+              <Field label={`${label(i)} · Team`}>
+                <select
+                  className="input"
+                  value={r.team_id}
+                  onChange={e => setRow(r.key, { team_id: e.target.value, player_name: '' })}
+                >
+                  <option value="">— Not set —</option>
+                  {participating.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {isIndividual && (
+                <Field label="Contestant / Player (optional)">
+                  <input
+                    list={`contestant-list-${r.key}`}
+                    className="input"
+                    placeholder="Select or type contestant"
+                    value={r.player_name}
+                    onChange={e => setRow(r.key, { player_name: e.target.value })}
+                  />
+                  <datalist id={`contestant-list-${r.key}`}>
+                    {teamParticipants.map(p => (
+                      <option key={p.id} value={p.player_name} />
+                    ))}
+                  </datalist>
+                </Field>
+              )}
+
+              <Field label="Points">
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="e.g. 10"
+                  value={r.points}
+                  onChange={e => setRow(r.key, { points: e.target.value })}
+                />
+              </Field>
+              {i >= 2 ? (
+                <button
+                  type="button"
+                  aria-label="Remove placement"
+                  className="mb-1 rounded-full p-2 text-red-700 hover:bg-red-50"
+                  onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : (
+                <span />
+              )}
+            </div>
+          )
+        })}
       </div>
-      <button type="button" className="btn-outline btn-sm mt-3" onClick={() => setRows(rs => [...rs, { key: crypto.randomUUID(), team_id: '', points: '' }])}><Plus className="h-3 w-3" />Add another placement</button>
+      <button type="button" className="btn-outline btn-sm mt-3" onClick={() => setRows(rs => [...rs, { key: crypto.randomUUID(), team_id: '', player_name: '', points: '' }])}><Plus className="h-3 w-3" />Add another placement</button>
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <Field label="Result status" hint="Only Completed results count towards the leaderboard. Points may be left blank until scoring is final.">
           <select className="input" value={status} onChange={e => setStatus(e.target.value as 'pending' | 'completed')}><option value="pending">Pending</option><option value="completed">Completed</option></select>

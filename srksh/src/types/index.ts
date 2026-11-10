@@ -20,7 +20,7 @@ export interface Sport {
 export interface SportTeam { sport_id: string; team_id: string }
 export interface Participant { id: string; sport_id: string; team_id: string; member_id: string | null; player_name: string; is_manual: boolean; sort_order?: number; created_at?: string }
 export interface SportResult { id: string; sport_id: string; status: 'pending' | 'completed'; notes: string | null }
-export interface Placement { id: string; result_id: string; team_id: string; placement: number; points: number | null }
+export interface Placement { id: string; result_id: string; team_id: string; placement: number; points: number | null; player_name?: string | null }
 export interface LeaderRow {
   team_id: string; edition_id: string; team_name: string; colour: string | null; logo_path: string | null
   captain_name: string; captain_photo_path: string | null

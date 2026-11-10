@@ -110,7 +110,13 @@ export function SportCard({ sport, bundle, teams, defaultOpen }: { sport: Sport;
                   <span className="flex items-center gap-2 font-medium">
                     <Medal className={`h-5 w-5 ${p.placement === 1 ? 'text-gold' : p.placement === 2 ? 'text-gray-400' : 'text-[#A8683A]'}`} />
                     <span className="text-xs uppercase tracking-wide text-bark-soft">{p.placement === 1 ? 'Winner' : p.placement === 2 ? 'Runner-up' : ordinal(p.placement)}</span>
-                    <ColourDot colour={t?.colour} />{t?.name ?? 'Unknown team'}
+                    <ColourDot colour={t?.colour} />
+                    <span>{t?.name ?? 'Unknown team'}</span>
+                    {p.player_name && (
+                      <span className="rounded-full bg-sand/60 px-2 py-0.5 text-xs text-bark font-semibold">
+                        👤 {p.player_name}
+                      </span>
+                    )}
                   </span>
                   <span className="font-serif text-xl font-bold text-terracotta-deep">{p.points == null ? '—' : `${fmtPoints(p.points)} pts`}</span>
                 </li>

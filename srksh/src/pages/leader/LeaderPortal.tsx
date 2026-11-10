@@ -1049,9 +1049,9 @@ export default function LeaderPortal() {
                       .filter(r => r.status === 'completed')
                       .map(r => {
                         const sport = bundle.sports.find(s => s.id === r.sport_id)
-                        const placement = bundle.placements.find(
-                          p => p.result_id === r.id && p.team_id === currentTeam.id
-                        )
+                        const teamPlacements = bundle.placements
+                          .filter(p => p.result_id === r.id && p.team_id === currentTeam.id)
+                          .sort((a, b) => a.placement - b.placement)
 
                         return (
                           <div key={r.id} className="flex items-center justify-between py-3">
@@ -1060,11 +1060,22 @@ export default function LeaderPortal() {
                               <p className="text-xs text-bark-soft">{sport?.category ?? 'Event'}</p>
                             </div>
                             <div className="text-right">
-                              {placement ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-saffron-soft px-3 py-1 text-xs font-bold text-bark">
-                                  <Award className="h-3.5 w-3.5 text-terracotta" />
-                                  {ordinal(placement.placement)} Place ({placement.points ?? 0} pts)
-                                </span>
+                              {teamPlacements.length > 0 ? (
+                                <div className="flex flex-wrap justify-end gap-1.5">
+                                  {teamPlacements.map(pl => (
+                                    <span
+                                      key={pl.id}
+                                      className="inline-flex items-center gap-1 rounded-full bg-saffron-soft px-3 py-1 text-xs font-bold text-bark"
+                                    >
+                                      <Award className="h-3.5 w-3.5 text-terracotta" />
+                                      {ordinal(pl.placement)} Place
+                                      {pl.player_name && (
+                                        <span className="font-medium text-bark-soft">({pl.player_name})</span>
+                                      )}
+                                      <span className="text-terracotta font-semibold">· {pl.points ?? 0} pts</span>
+                                    </span>
+                                  ))}
+                                </div>
                               ) : (
                                 <span className="text-xs text-bark-faint">No placement recorded</span>
                               )}
